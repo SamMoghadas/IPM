@@ -21,7 +21,7 @@ public class AdminUI {
 
     public AdminUI() {
         try {
-            conn = DriverManager.getConnection("jdbc:sqlite:test.db");
+            conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
             createTables();
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Database connection failed!", e.getMessage());
@@ -63,7 +63,7 @@ public class AdminUI {
 
         JLabel vehicleLabel = new JLabel("ماشین:");
         vehicleCombo = new JComboBox<>();
-        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db")) {
+        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name, color, plate FROM Car");
 
@@ -77,7 +77,7 @@ public class AdminUI {
 
         JLabel employeeLabel = new JLabel("کارمند:");
         employeeCombo = new JComboBox<>();
-        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db")) {
+        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name FROM Employee");
 

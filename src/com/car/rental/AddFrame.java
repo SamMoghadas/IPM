@@ -80,7 +80,7 @@ public class AddFrame extends JFrame {
                 return;
             }
 
-            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db")) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
                 String sql = "INSERT INTO Car(name, plate, color) VALUES(?,?,?)";
                 PreparedStatement preparedStatement = conn.prepareStatement(sql);
                 preparedStatement.setString(1, name);
@@ -109,7 +109,7 @@ public class AddFrame extends JFrame {
                 return;
             }
 
-            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db")) {
+            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
                 String sql = "INSERT INTO Employee(name, phone, telegram_id) VALUES(?,?,?)";
                 PreparedStatement preparedStatement = conn.prepareStatement(sql);
                 preparedStatement.setString(1, name);

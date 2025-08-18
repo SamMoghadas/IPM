@@ -28,7 +28,7 @@ public class ReportFrame extends JFrame {
                 "r.delivery_date, r.return_date, r.destination " +
                 "FROM CarRental r JOIN Employee e ON r.employee_phone = e.phone " +
                 "LEFT JOIN Car c ON r.car_plate = c.plate";
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db");
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
 
