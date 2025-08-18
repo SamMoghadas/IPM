@@ -239,6 +239,11 @@ public class AdminUI {
             } else {
                 JOptionPane.showMessageDialog(null, "کد تحویل نامعتبر یا قبلاً ثبت شده است!");
             }
+
+            // خالی کردن فیلدها بعد از ثبت
+            returnTimeField.setText("");
+            rentalCodeField.setText("");
+
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
