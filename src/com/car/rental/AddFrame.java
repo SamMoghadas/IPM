@@ -1,6 +1,7 @@
 package com.car.rental;
 
 import javax.swing.*;
+import javax.swing.text.*;
 import java.awt.*;
 import java.sql.*;
 
@@ -9,6 +10,7 @@ public class AddFrame extends JFrame {
         setTitle("اضافه کردن ماشین و کارمند");
         setSize(600, 400);
         setLayout(new GridLayout(2, 1, 0, 10));
+        setVisible(true);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
@@ -22,8 +24,34 @@ public class AddFrame extends JFrame {
         modelField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         JLabel plateLabel = new JLabel("پلاک:");
-        JTextField plateField = new JTextField(20);
-        plateField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        plateLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        JPanel platePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        platePanel.setBackground(new Color(255, 255, 255));
+
+        // ۲ رقم اول
+        JTextField firstTwo = new JTextField(2);
+        firstTwo.setDocument(new LimitDigitsDocument(2));
+
+        // حرف
+        String[] letters = {
+                "الف", "ب", "ج", "د", "س", "ص", "ط", "ق",
+                "گ", "ل", "م", "ن", "و", "هـ", "ی"
+        };
+        JComboBox<String> letterCombo = new JComboBox<>(letters);
+
+        // ۳ رقم وسط
+        JTextField middleThree = new JTextField(3);
+        middleThree.setDocument(new LimitDigitsDocument(3));
+
+        // ۲ رقم آخر (کد شهر)
+        JTextField cityCode = new JTextField(2);
+        cityCode.setDocument(new LimitDigitsDocument(2));
+
+        platePanel.add(firstTwo);
+        platePanel.add(letterCombo);
+        platePanel.add(middleThree);
+        platePanel.add(new JLabel("ایران"));
+        platePanel.add(cityCode);
 
         JLabel colorLabel = new JLabel("رنگ:");
         JTextField colorField = new JTextField(20);
@@ -34,7 +62,7 @@ public class AddFrame extends JFrame {
         vehiclePanel.add(modelLabel);
         vehiclePanel.add(modelField);
         vehiclePanel.add(plateLabel);
-        vehiclePanel.add(plateField);
+        vehiclePanel.add(platePanel);
         vehiclePanel.add(colorLabel);
         vehiclePanel.add(colorField);
         vehiclePanel.add(new JLabel());
@@ -72,10 +100,13 @@ public class AddFrame extends JFrame {
         // ----------------- عملیات اضافه کردن ماشین -----------------
         addVehicleButton.addActionListener(e -> {
             String name = modelField.getText().trim();
-            String plate = plateField.getText().trim();
+            String plate = firstTwo.getText() + " "
+                    + letterCombo.getSelectedItem() + " "
+                    + middleThree.getText() + " | "
+                    + cityCode.getText();
             String color = colorField.getText().trim();
 
-            if (name.isEmpty() || plate.isEmpty() || color.isEmpty()) {
+            if (name.isEmpty() || color.isEmpty()) {
                 JOptionPane.showMessageDialog(null, "تمام فیلدهای ماشین باید پر شوند!");
                 return;
             }
@@ -90,7 +121,9 @@ public class AddFrame extends JFrame {
 
                 JOptionPane.showMessageDialog(null, "ماشین با موفقیت اضافه شد!");
                 modelField.setText("");
-                plateField.setText("");
+                firstTwo.setText("");
+                middleThree.setText("");
+                cityCode.setText("");
                 colorField.setText("");
 
             } catch (SQLException ex) {
@@ -126,11 +159,23 @@ public class AddFrame extends JFrame {
                 JOptionPane.showMessageDialog(null, "خطا در اضافه کردن کارمند: " + ex.getMessage());
             }
         });
-
-        setVisible(true);
     }
 
-    public static void main(String[] args) {
-        new AddFrame();
+    // ----------------- کنترل ارقام پلاک -----------------
+    static class LimitDigitsDocument extends PlainDocument {
+        private final int limit;
+        public LimitDigitsDocument(int limit) {
+            this.limit = limit;
+        }
+
+        @Override
+        public void insertString(int offset, String str, AttributeSet attr)
+                throws BadLocationException {
+            if (str == null) return;
+
+            if ((getLength() + str.length()) <= limit && str.matches("\\d+")) {
+                super.insertString(offset, str, attr);
+            }
+        }
     }
 }
