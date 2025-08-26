@@ -24,7 +24,6 @@ public class AddFrame extends JFrame {
         modelField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         JLabel plateLabel = new JLabel("پلاک:");
-        plateLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         JPanel platePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         platePanel.setBackground(new Color(255, 255, 255));
 
