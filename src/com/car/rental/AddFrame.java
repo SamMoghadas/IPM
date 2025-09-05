@@ -99,10 +99,10 @@ public class AddFrame extends JFrame {
         // ----------------- عملیات اضافه کردن ماشین -----------------
         addVehicleButton.addActionListener(e -> {
             String name = modelField.getText().trim();
-            String plate = firstTwo.getText() + " "
+            String plate = cityCode.getText() + " | "
+                    + middleThree.getText() + " "
                     + letterCombo.getSelectedItem() + " "
-                    + middleThree.getText() + " | "
-                    + cityCode.getText();
+                    + firstTwo.getText();
             String color = colorField.getText().trim();
 
             if (name.isEmpty() || color.isEmpty()) {

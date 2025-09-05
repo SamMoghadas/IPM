@@ -63,12 +63,14 @@ public class AdminUI {
 
         JLabel vehicleLabel = new JLabel("ماشین:");
         vehicleCombo = new JComboBox<>();
+        ((JLabel)vehicleCombo.getRenderer()).setHorizontalAlignment(SwingConstants.RIGHT);
         try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name, color, plate FROM Car");
 
             while (rs.next()) {
-                String car = rs.getString("name") + " - " + rs.getString("color") + " - " + rs.getString("plate");
+                String car = rs.getString("name") + " - " + rs.getString("color") +
+                        " - " + rs.getString("plate");
                 vehicleCombo.addItem(car);
             }
         } catch (SQLException e) {
@@ -77,6 +79,7 @@ public class AdminUI {
 
         JLabel employeeLabel = new JLabel("کارمند:");
         employeeCombo = new JComboBox<>();
+        ((JLabel)employeeCombo.getRenderer()).setHorizontalAlignment(SwingConstants.RIGHT);
         try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name FROM Employee");
