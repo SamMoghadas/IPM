@@ -161,7 +161,7 @@ public class AdminUI {
         returnPanel.add(returnButton);
 
         // --- دکمه‌ها ---
-        JButton addItemsButton = new JButton("اضافه کردن ماشین/کارمند");
+        JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
         addItemsButton.addActionListener(e -> new AddFrame());
         JButton reportButton = new JButton("نمایش گزارش");
         reportButton.addActionListener(e -> new ReportFrame());

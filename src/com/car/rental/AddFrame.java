@@ -17,7 +17,7 @@ public class AddFrame extends JFrame {
         // ----------------- پنل اضافه کردن ماشین -----------------
         JPanel vehiclePanel = new JPanel(new GridLayout(4, 2, 10, 10));
         vehiclePanel.setBorder(BorderFactory.createTitledBorder("اضافه کردن ماشین"));
-        vehiclePanel.setBackground(new Color(255, 255, 255));
+        vehiclePanel.setBackground(Color.WHITE);
 
         JLabel modelLabel = new JLabel("نام ماشین:");
         JTextField modelField = new JTextField(20);
@@ -25,7 +25,7 @@ public class AddFrame extends JFrame {
 
         JLabel plateLabel = new JLabel("پلاک:");
         JPanel platePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        platePanel.setBackground(new Color(255, 255, 255));
+        platePanel.setBackground(Color.WHITE);
 
         // ۲ رقم اول
         JTextField firstTwo = new JTextField(2);
@@ -70,7 +70,7 @@ public class AddFrame extends JFrame {
         // ----------------- پنل اضافه کردن کارمند -----------------
         JPanel employeePanel = new JPanel(new GridLayout(4, 2, 10, 10));
         employeePanel.setBorder(BorderFactory.createTitledBorder("اضافه کردن کارمند"));
-        employeePanel.setBackground(new Color(255, 255, 255));
+        employeePanel.setBackground(Color.WHITE);
 
         JLabel nameLabel = new JLabel("نام:");
         JTextField nameField = new JTextField(20);
