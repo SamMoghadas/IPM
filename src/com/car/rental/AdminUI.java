@@ -1,3 +1,4 @@
+
 package com.car.rental;
 
 import javax.swing.*;
@@ -25,7 +26,6 @@ public class AdminUI {
             createTables();
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Database connection failed!", e.getMessage());
-
         }
         createMainUI();
     }
@@ -52,22 +52,165 @@ public class AdminUI {
     private void createMainUI() {
         JFrame frame = new JFrame("سیستم مدیریت ماشین شرکت");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(900, 700);
+        frame.setSize(600, 500); // اندازه بهینه‌تر
         frame.setLayout(new BorderLayout(10, 10));
-        frame.getContentPane().setBackground(new Color(240, 240, 240));
+        frame.getContentPane().setBackground(new Color(245, 245, 250));
 
         // --- بخش تحویل ---
-        JPanel pickupPanel = new JPanel(new GridLayout(5, 2, 10, 10));
+        JPanel pickupPanel = new JPanel(new GridBagLayout());
         pickupPanel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
         pickupPanel.setBackground(Color.WHITE);
 
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        // ماشین
+        gbc.gridx = 0; gbc.gridy = 0;
         JLabel vehicleLabel = new JLabel("ماشین:");
+        vehicleLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(vehicleLabel, gbc);
+        gbc.gridx = 1;
         vehicleCombo = new JComboBox<>();
-        ((JLabel)vehicleCombo.getRenderer()).setHorizontalAlignment(SwingConstants.RIGHT);
-        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
+        vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
+        loadVehicles();
+        pickupPanel.add(vehicleCombo, gbc);
+
+        // کارمند
+        gbc.gridx = 0; gbc.gridy = 1;
+        JLabel employeeLabel = new JLabel("کارمند:");
+        employeeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(employeeLabel, gbc);
+        gbc.gridx = 1;
+        employeeCombo = new JComboBox<>();
+        employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
+        loadEmployees();
+        pickupPanel.add(employeeCombo, gbc);
+
+        // زمان تحویل
+        gbc.gridx = 0; gbc.gridy = 2;
+        JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
+        pickupTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(pickupTimeLabel, gbc);
+        gbc.gridx = 1;
+        JPanel pickupTimePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        pickupTimePanel.setBackground(Color.WHITE);
+        pickupTimeField = new JTextField(15);
+        pickupTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
+        JButton nowPickupButton = new JButton("الان");
+        nowPickupButton.setFont(new Font("Arial", Font.PLAIN, 12));
+        nowPickupButton.addActionListener(e -> {
+            LocalDateTime now = LocalDateTime.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            pickupTimeField.setText(now.format(formatter));
+        });
+        pickupTimePanel.add(pickupTimeField);
+        pickupTimePanel.add(nowPickupButton);
+        pickupPanel.add(pickupTimePanel, gbc);
+
+        // مقصد
+        gbc.gridx = 0; gbc.gridy = 3;
+        JLabel destinationLabel = new JLabel("مقصد:");
+        destinationLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(destinationLabel, gbc);
+        gbc.gridx = 1;
+        destinationField = new JTextField(15);
+        destinationField.setFont(new Font("Arial", Font.PLAIN, 14));
+        pickupPanel.add(destinationField, gbc);
+
+        // دکمه ثبت تحویل
+        gbc.gridx = 1; gbc.gridy = 4;
+        JButton pickupButton = new JButton("ثبت تحویل");
+        pickupButton.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupButton.setBackground(new Color(0, 120, 215));
+        pickupButton.setForeground(Color.WHITE);
+        pickupButton.addActionListener(e -> {
+            pickupCar();
+            pickupTimeField.setText("");
+            destinationField.setText("");
+        });
+        pickupPanel.add(pickupButton, gbc);
+
+        // --- بخش بازگشت ---
+        JPanel returnPanel = new JPanel(new GridBagLayout());
+        returnPanel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
+        returnPanel.setBackground(Color.WHITE);
+
+        // کد تحویل
+        gbc.gridx = 0; gbc.gridy = 0;
+        JLabel rentalIdLabel = new JLabel("کد تحویل:");
+        rentalIdLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        returnPanel.add(rentalIdLabel, gbc);
+        gbc.gridx = 1;
+        rentalCodeField = new JTextField(15);
+        rentalCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
+        returnPanel.add(rentalCodeField, gbc);
+
+        // زمان بازگشت
+        gbc.gridx = 0; gbc.gridy = 1;
+        JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
+        returnTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        returnPanel.add(returnTimeLabel, gbc);
+        gbc.gridx = 1;
+        JPanel returnTimePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        returnTimePanel.setBackground(Color.WHITE);
+        returnTimeField = new JTextField(15);
+        returnTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
+        JButton nowReturnButton = new JButton("الان");
+        nowReturnButton.setFont(new Font("Arial", Font.PLAIN, 12));
+        nowReturnButton.addActionListener(e -> {
+            LocalDateTime now = LocalDateTime.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            returnTimeField.setText(now.format(formatter));
+        });
+        returnTimePanel.add(returnTimeField);
+        returnTimePanel.add(nowReturnButton);
+        returnPanel.add(returnTimePanel, gbc);
+
+        // دکمه ثبت بازگشت
+        gbc.gridx = 1; gbc.gridy = 2;
+        JButton returnButton = new JButton("ثبت بازگشت");
+        returnButton.setFont(new Font("Arial", Font.BOLD, 14));
+        returnButton.setBackground(new Color(0, 120, 215));
+        returnButton.setForeground(Color.WHITE);
+        returnButton.addActionListener(e -> {
+            returnCar();
+            rentalCodeField.setText("");
+            returnTimeField.setText("");
+        });
+        returnPanel.add(returnButton, gbc);
+
+        // --- دکمه‌ها ---
+        JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
+        addItemsButton.setFont(new Font("Arial", Font.BOLD, 14));
+        addItemsButton.setBackground(new Color(34, 139, 34));
+        addItemsButton.setForeground(Color.WHITE);
+        addItemsButton.addActionListener(e -> new AddFrame());
+        JButton reportButton = new JButton("نمایش گزارش");
+        reportButton.setFont(new Font("Arial", Font.BOLD, 14));
+        reportButton.setBackground(new Color(139, 69, 19));
+        reportButton.setForeground(Color.WHITE);
+        reportButton.addActionListener(e -> new ReportFrame());
+
+        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        buttonsPanel.add(addItemsButton);
+        buttonsPanel.add(reportButton);
+
+        // چیدمان اصلی
+        JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
+        mainPanel.add(pickupPanel);
+        mainPanel.add(returnPanel);
+        frame.add(mainPanel, BorderLayout.CENTER);
+        frame.add(buttonsPanel, BorderLayout.SOUTH);
+
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+    }
+
+    private void loadVehicles() {
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name, color, plate FROM Car");
-
             while (rs.next()) {
                 String car = rs.getString("name") + " - " + rs.getString("color") +
                         " - " + rs.getString("plate");
@@ -76,14 +219,12 @@ public class AdminUI {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
         }
+    }
 
-        JLabel employeeLabel = new JLabel("کارمند:");
-        employeeCombo = new JComboBox<>();
-        ((JLabel)employeeCombo.getRenderer()).setHorizontalAlignment(SwingConstants.RIGHT);
-        try(Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
+    private void loadEmployees() {
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name FROM Employee");
-
             while (rs.next()) {
                 String employee = rs.getString("name");
                 employeeCombo.addItem(employee);
@@ -91,96 +232,6 @@ public class AdminUI {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, "خطا در خواندن کارمند‌ها: " + e.getMessage());
         }
-
-        JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
-        JPanel pickupTimePanel = new JPanel(new GridLayout(1, 2, 5, 0));
-        pickupTimePanel.setBackground(Color.WHITE);
-        pickupTimeField = new JTextField(20);
-        JButton nowPickupButton = new JButton("الان");
-        nowPickupButton.addActionListener(e -> {
-            LocalDateTime now = LocalDateTime.now();
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            pickupTimeField.setText(now.format(formatter));
-        });
-
-        pickupTimePanel.add(pickupTimeField);
-        pickupTimePanel.add(nowPickupButton);
-
-        JLabel destinationLabel = new JLabel("مقصد:");
-        destinationField = new JTextField(20);
-
-        JButton pickupButton = new JButton("ثبت تحویل");
-        pickupButton.addActionListener(e ->  {
-            pickupCar();
-            pickupTimeField.setText("");
-            destinationField.setText("");
-        });
-
-        pickupPanel.add(vehicleLabel);
-        pickupPanel.add(vehicleCombo);
-        pickupPanel.add(employeeLabel);
-        pickupPanel.add(employeeCombo);
-        pickupPanel.add(pickupTimeLabel);
-        pickupPanel.add(pickupTimePanel);
-        pickupPanel.add(destinationLabel);
-        pickupPanel.add(destinationField);
-        pickupPanel.add(new JLabel());
-        pickupPanel.add(pickupButton);
-
-        // --- بخش بازگشت ---
-        JPanel returnPanel = new JPanel(new GridLayout(5, 2, 10, 10));
-        returnPanel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
-        returnPanel.setBackground(Color.WHITE);
-
-        JLabel rentalIdLabel = new JLabel("کد تحویل:");
-        rentalCodeField = new JTextField(20);
-
-        JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
-        JPanel returnTimePanel = new JPanel(new GridLayout(1, 2, 5, 0));
-        returnTimePanel.setBackground(Color.WHITE);
-        returnTimeField = new JTextField(20);
-        JButton nowReturnButton = new JButton("الان");
-        nowReturnButton.addActionListener(e -> {
-            LocalDateTime now = LocalDateTime.now();
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            returnTimeField.setText(now.format(formatter));
-        });
-
-        returnTimePanel.add(returnTimeField);
-        returnTimePanel.add(nowReturnButton);
-
-        JButton returnButton = new JButton("ثبت بازگشت");
-        returnButton.addActionListener(e -> {
-            returnCar();
-            rentalCodeField.setText("");
-            returnTimeField.setText("");
-        });
-
-        returnPanel.add(rentalIdLabel);
-        returnPanel.add(rentalCodeField);
-        returnPanel.add(returnTimeLabel);
-        returnPanel.add(returnTimePanel);
-        returnPanel.add(new JLabel());
-        returnPanel.add(returnButton);
-
-        // --- دکمه‌ها ---
-        JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
-        addItemsButton.addActionListener(e -> new AddFrame());
-        JButton reportButton = new JButton("نمایش گزارش");
-        reportButton.addActionListener(e -> new ReportFrame());
-
-        JPanel mainPanel = new JPanel(new GridLayout(2, 1, 0, 10));
-        mainPanel.add(pickupPanel);
-        mainPanel.add(returnPanel);
-        frame.add(mainPanel, BorderLayout.NORTH);
-
-        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        buttonsPanel.add(addItemsButton);
-        buttonsPanel.add(reportButton);
-        frame.add(buttonsPanel, BorderLayout.SOUTH);
-
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
     }
 
     private String generateRentalCode() {
@@ -194,10 +245,8 @@ public class AdminUI {
         String sql = "INSERT INTO CarRental(rental_code, employee_phone, car_plate, delivery_date, destination) " +
                 "VALUES (?, ?, ?, ?, ?)";
         try {
-            // 1. گرفتن شماره تلفن کارمند از کومبو
             String selectedEmpPhone = null;
-            String empSql = "SELECT phone FROM Employee WHERE name = ?";
-            try (PreparedStatement empStmt = conn.prepareStatement(empSql)) {
+            try (PreparedStatement empStmt = conn.prepareStatement("SELECT phone FROM Employee WHERE name = ?")) {
                 empStmt.setString(1, (String) employeeCombo.getSelectedItem());
                 ResultSet rs = empStmt.executeQuery();
                 if (rs.next()) {
@@ -205,7 +254,6 @@ public class AdminUI {
                 }
             }
 
-            // 2. گرفتن پلاک ماشین از کومبو
             String selectedCar = (String) vehicleCombo.getSelectedItem();
             String selectedCarPlate = Optional.ofNullable(selectedCar)
                     .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
@@ -217,7 +265,6 @@ public class AdminUI {
                 return;
             }
 
-            // 3. وارد کردن داده‌ها به جدول CarRental
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setString(1, rentalCode);
                 stmt.setString(2, selectedEmpPhone);
@@ -229,7 +276,6 @@ public class AdminUI {
 
             JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
 
-            // خالی کردن فیلدها بعد از ثبت
             pickupTimeField.setText("");
             destinationField.setText("");
 
@@ -237,7 +283,6 @@ public class AdminUI {
             JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
     }
-
 
     private void returnCar() {
         String checkSql = "SELECT * FROM CarRental WHERE rental_code = ? AND return_date IS NULL";
@@ -262,7 +307,6 @@ public class AdminUI {
                 JOptionPane.showMessageDialog(null, "کد تحویل نامعتبر یا قبلاً ثبت شده است!");
             }
 
-            // خالی کردن فیلدها بعد از ثبت
             returnTimeField.setText("");
             rentalCodeField.setText("");
 
