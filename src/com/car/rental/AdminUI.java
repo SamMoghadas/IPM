@@ -68,30 +68,34 @@ public class AdminUI {
 
         // ماشین
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST; // فیلد سمت راست
+        JLabel vehicleLabel = new JLabel("ماشین:");
+        vehicleLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(vehicleLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST; // برچسب سمت چپ فیلد
         vehicleCombo = new JComboBox<>();
         vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای کومبو
         loadVehicles();
         pickupPanel.add(vehicleCombo, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST; // برچسب سمت چپ فیلد
-        JLabel vehicleLabel = new JLabel("ماشین:");
-        vehicleLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(vehicleLabel, gbc);
 
         // کارمند
         gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
+        JLabel employeeLabel = new JLabel("کارمند:");
+        employeeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(employeeLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای کومبو
         loadEmployees();
         pickupPanel.add(employeeCombo, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        JLabel employeeLabel = new JLabel("کارمند:");
-        employeeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(employeeLabel, gbc);
 
         // زمان تحویل
         gbc.gridx = 0; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST;
+        JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
+        pickupTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(pickupTimeLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         JPanel pickupTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         pickupTimePanel.setBackground(Color.WHITE);
         pickupTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل زمان
@@ -109,24 +113,20 @@ public class AdminUI {
         pickupTimePanel.add(pickupTimeField);
         pickupTimePanel.add(nowPickupButton);
         pickupPanel.add(pickupTimePanel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
-        pickupTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(pickupTimeLabel, gbc);
 
         // مقصد
         gbc.gridx = 0; gbc.gridy = 3; gbc.anchor = GridBagConstraints.EAST;
+        JLabel destinationLabel = new JLabel("مقصد:");
+        destinationLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(destinationLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         destinationField = new JTextField(15);
         destinationField.setFont(new Font("Arial", Font.PLAIN, 14));
         destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
         pickupPanel.add(destinationField, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        JLabel destinationLabel = new JLabel("مقصد:");
-        destinationLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(destinationLabel, gbc);
 
         // دکمه ثبت تحویل
-        gbc.gridx = 0; gbc.gridy = 4; gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 1; gbc.gridy = 4; gbc.anchor = GridBagConstraints.CENTER;
         JButton pickupButton = new JButton("ثبت تحویل");
         pickupButton.setFont(new Font("Arial", Font.BOLD, 14));
         pickupButton.setBackground(new Color(0, 120, 215));
@@ -147,17 +147,21 @@ public class AdminUI {
 
         // کد تحویل
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        JLabel rentalIdLabel = new JLabel("کد تحویل:");
+        rentalIdLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        returnPanel.add(rentalIdLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         rentalCodeField = new JTextField(15);
         rentalCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
         rentalCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
         returnPanel.add(rentalCodeField, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        JLabel rentalIdLabel = new JLabel("کد تحویل:");
-        rentalIdLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        returnPanel.add(rentalIdLabel, gbc);
 
         // زمان بازگشت
         gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
+        JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
+        returnTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        returnPanel.add(returnTimeLabel, gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         JPanel returnTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         returnTimePanel.setBackground(Color.WHITE);
         returnTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل زمان
@@ -175,13 +179,9 @@ public class AdminUI {
         returnTimePanel.add(returnTimeField);
         returnTimePanel.add(nowReturnButton);
         returnPanel.add(returnTimePanel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
-        returnTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        returnPanel.add(returnTimeLabel, gbc);
 
         // دکمه ثبت بازگشت
-        gbc.gridx = 0; gbc.gridy = 2; gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 1; gbc.gridy = 2; gbc.anchor = GridBagConstraints.CENTER;
         JButton returnButton = new JButton("ثبت بازگشت");
         returnButton.setFont(new Font("Arial", Font.BOLD, 14));
         returnButton.setBackground(new Color(0, 120, 215));
