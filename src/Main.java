@@ -1,4 +1,5 @@
 import com.car.rental.AdminUI;
+import com.car.rental.DatabaseManager;
 
 public class Main {
     public static void main(String[] args) {
@@ -6,3 +7,4 @@ public class Main {
         new AdminUI();
     }
 }
+
