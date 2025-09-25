@@ -105,7 +105,11 @@ public class AdminUI {
         JButton nowPickupButton = new JButton("الان");
         nowPickupButton.setFont(new Font("Arial", Font.PLAIN, 12));
         nowPickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
-        nowPickupButton.addActionListener(e -> pickupTimeField.setText(getDate()));
+        nowPickupButton.addActionListener(e -> {
+            LocalDateTime now = LocalDateTime.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            pickupTimeField.setText(now.format(formatter));
+        });
         pickupTimePanel.add(pickupTimeField);
         pickupTimePanel.add(nowPickupButton);
         pickupPanel.add(pickupTimePanel, gbc);
@@ -167,7 +171,11 @@ public class AdminUI {
         JButton nowReturnButton = new JButton("الان");
         nowReturnButton.setFont(new Font("Arial", Font.PLAIN, 12));
         nowReturnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
-        nowReturnButton.addActionListener(e -> returnTimeField.setText(getDate()));
+        nowReturnButton.addActionListener(e -> {
+            LocalDateTime now = LocalDateTime.now();
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            returnTimeField.setText(now.format(formatter));
+        });
         returnTimePanel.add(returnTimeField);
         returnTimePanel.add(nowReturnButton);
         returnPanel.add(returnTimePanel, gbc);
@@ -215,17 +223,6 @@ public class AdminUI {
 
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
-    }
-
-    private static String getDate() {
-            LocalDateTime now = LocalDateTime.now();
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            String[] date_time = now.format(formatter).split(" ");
-            String[] date = date_time[0].split("-");
-            int[] shams_date = DateConverter.gregorian_to_jalali(
-                    Integer.parseInt(date[0]), Integer.parseInt(date[1]), Integer.parseInt(date[2]));
-
-            return shams_date[0] + "-" + shams_date[1] + "-" + shams_date[2] + " " + date_time[1];
     }
 
     private void loadVehicles() {
@@ -338,47 +335,5 @@ public class AdminUI {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(AdminUI::new);
-    }
-
-    static class DateConverter {
-
-        /**
-         * Gregorian & Jalali (Hijri_Shams,Solar) Date Converter Functions
-         * Author: JDF.SCR.IR =>> Download Full Version :  <a href="http://jdf.scr.ir/jdf">...</a>
-         * License: GNU/LGPL _ Open Source & Free :: Version: 2.80 : [2020=1399]
-         * ---------------------------------------------------------------------
-         * 355746=361590-5844 & 361590=(30*33*365)+(30*8) & 5844=(16*365)+(16/4)
-         * 355666=355746-79-1 & 355668=355746-79+1 &  1595=605+990 &  605=621-16
-         * 990=30*33 & 12053=(365*33)+(32/4) & 36524=(365*100)+(100/4)-(100/100)
-         * 1461=(365*4)+(4/4) & 146097=(365*400)+(400/4)-(400/100)+(400/400)
-         */
-
-        public static int[] gregorian_to_jalali(int gy, int gm, int gd) {
-            int[] out = {
-                    (gm > 2) ? (gy + 1) : gy,
-                    0,
-                    0
-            };
-            {
-                int[] g_d_m = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-                out[2] = 355666 + (365 * gy) + (((out[0] + 3) / 4)) - (((out[0] + 99) / 100)) + (((out[0] + 399) / 400)) + gd + g_d_m[gm - 1];
-            }
-            out[0] = -1595 + (33 * ((out[2] / 12053)));
-            out[2] %= 12053;
-            out[0] += 4 * ((out[2] / 1461));
-            out[2] %= 1461;
-            if (out[2] > 365) {
-                out[0] += ((out[2] - 1) / 365);
-                out[2] = (out[2] - 1) % 365;
-            }
-            if (out[2] < 186) {
-                out[1] = 1 + (out[2] / 31);
-                out[2] = 1 + (out[2] % 31);
-            } else {
-                out[1] = 7 + ((out[2] - 186) / 30);
-                out[2] = 1 + ((out[2] - 186) % 30);
-            }
-            return out;
-        }
     }
 }

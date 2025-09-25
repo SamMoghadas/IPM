@@ -32,7 +32,7 @@ public class ReportFrame extends JFrame {
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
 
-            StringBuilder reportText = new StringBuilder(); // ساختن رشته برای جمع‌آوری گزارش
+            StringBuilder reportText = new StringBuilder();
 
             while (rs.next()) {
                 String employeeName = rs.getString("employee_name");

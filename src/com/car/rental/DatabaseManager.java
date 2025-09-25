@@ -1,5 +1,5 @@
 
-
+package com.car.rental;
 import java.sql.*;
 
 public class DatabaseManager {
@@ -12,9 +12,9 @@ public class DatabaseManager {
     }
 
     public void addVehicle(String model, String licensePlate) throws SQLException {}
-    public void assignVehicle(int vehicleId, int employeeId, String pickupTime, String destination, String code) throws SQLException {}
-    public void returnVehicle(int assignmentId, String returnTime) throws SQLException {}
+    public void assignVehicle(String vehicleId, String employeeId, String pickupTime, String destination, String code) throws SQLException {}
+    public void returnVehicle(String assignmentId, String returnTime) throws SQLException {}
     public String[] getStatus() throws SQLException {
         return new String[0];
     }
-}
+} //
