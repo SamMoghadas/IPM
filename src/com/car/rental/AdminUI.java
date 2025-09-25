@@ -11,8 +11,7 @@ import java.util.logging.Logger;
 import java.util.Optional;
 
 public class AdminUI {
-    private Connection conn;
-
+    private DatabaseManager dbManager;
     private JComboBox<String> vehicleCombo;
     private JComboBox<String> employeeCombo;
     private JTextField pickupTimeField, destinationField;
@@ -20,32 +19,8 @@ public class AdminUI {
     private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
 
     public AdminUI() {
-        try {
-            conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
-            createTables();
-        } catch (SQLException e) {
-            logger.log(Level.SEVERE, "Database connection failed!", e.getMessage());
-        }
+        dbManager = new DatabaseManager();
         createMainUI();
-    }
-
-    private void createTables() throws SQLException {
-        String employeeTable = "CREATE TABLE IF NOT EXISTS Employee(" +
-                "name TEXT NOT NULL, phone TEXT PRIMARY KEY, telegram_id TEXT)";
-        String carTable = "CREATE TABLE IF NOT EXISTS Car(" +
-                "name TEXT NOT NULL, plate TEXT PRIMARY KEY, color TEXT NOT NULL)";
-        String rentalTable = "CREATE TABLE IF NOT EXISTS CarRental(" +
-                "rental_code TEXT, employee_phone TEXT, car_plate TEXT, " +
-                "delivery_date TEXT, return_date TEXT, destination TEXT, " +
-                "PRIMARY KEY(employee_phone, car_plate, delivery_date), " +
-                "FOREIGN KEY(employee_phone) REFERENCES Employee(phone), " +
-                "FOREIGN KEY(car_plate) REFERENCES Car(plate))";
-
-        try (Statement stmt = conn.createStatement()) {
-            stmt.execute(employeeTable);
-            stmt.execute(carTable);
-            stmt.execute(rentalTable);
-        }
     }
 
     private void createMainUI() {
@@ -54,27 +29,27 @@ public class AdminUI {
         frame.setSize(600, 500);
         frame.setLayout(new BorderLayout(10, 10));
         frame.getContentPane().setBackground(new Color(245, 245, 250));
-        frame.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای کل فریم
+        frame.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         // --- بخش تحویل ---
         JPanel pickupPanel = new JPanel(new GridBagLayout());
         pickupPanel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
         pickupPanel.setBackground(Color.WHITE);
-        pickupPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل
+        pickupPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 15, 5, 5); // فاصله بیشتر بین برچسب و فیلد
+        gbc.insets = new Insets(5, 15, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // ماشین
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST; // فیلد سمت راست
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
         JLabel vehicleLabel = new JLabel("ماشین:");
         vehicleLabel.setFont(new Font("Arial", Font.BOLD, 14));
         pickupPanel.add(vehicleLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST; // برچسب سمت چپ فیلد
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         vehicleCombo = new JComboBox<>();
         vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
-        vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای کومبو
+        vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadVehicles();
         pickupPanel.add(vehicleCombo, gbc);
 
@@ -86,7 +61,7 @@ public class AdminUI {
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
-        employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای کومبو
+        employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadEmployees();
         pickupPanel.add(employeeCombo, gbc);
 
@@ -98,18 +73,14 @@ public class AdminUI {
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         JPanel pickupTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         pickupTimePanel.setBackground(Color.WHITE);
-        pickupTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل زمان
+        pickupTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupTimeField = new JTextField(15);
         pickupTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        pickupTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
+        pickupTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         JButton nowPickupButton = new JButton("الان");
         nowPickupButton.setFont(new Font("Arial", Font.PLAIN, 12));
-        nowPickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
-        nowPickupButton.addActionListener(e -> {
-            LocalDateTime now = LocalDateTime.now();
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            pickupTimeField.setText(now.format(formatter));
-        });
+        nowPickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        nowPickupButton.addActionListener(e -> pickupTimeField.setText(getDate()));
         pickupTimePanel.add(pickupTimeField);
         pickupTimePanel.add(nowPickupButton);
         pickupPanel.add(pickupTimePanel, gbc);
@@ -122,7 +93,7 @@ public class AdminUI {
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         destinationField = new JTextField(15);
         destinationField.setFont(new Font("Arial", Font.PLAIN, 14));
-        destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
+        destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupPanel.add(destinationField, gbc);
 
         // دکمه ثبت تحویل
@@ -131,11 +102,15 @@ public class AdminUI {
         pickupButton.setFont(new Font("Arial", Font.BOLD, 14));
         pickupButton.setBackground(new Color(0, 120, 215));
         pickupButton.setForeground(Color.WHITE);
-        pickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
+        pickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupButton.addActionListener(e -> {
-            pickupCar();
-            pickupTimeField.setText("");
-            destinationField.setText("");
+            try {
+                pickupCar();
+                pickupTimeField.setText("");
+                destinationField.setText("");
+            } catch (SQLException ex) {
+                logger.log(Level.SEVERE, "Error in pickupCar", ex);
+            }
         });
         pickupPanel.add(pickupButton, gbc);
 
@@ -143,7 +118,7 @@ public class AdminUI {
         JPanel returnPanel = new JPanel(new GridBagLayout());
         returnPanel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
         returnPanel.setBackground(Color.WHITE);
-        returnPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل
+        returnPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         // کد تحویل
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
@@ -153,7 +128,7 @@ public class AdminUI {
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         rentalCodeField = new JTextField(15);
         rentalCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        rentalCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
+        rentalCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnPanel.add(rentalCodeField, gbc);
 
         // زمان بازگشت
@@ -164,18 +139,14 @@ public class AdminUI {
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         JPanel returnTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         returnTimePanel.setBackground(Color.WHITE);
-        returnTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل زمان
+        returnTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnTimeField = new JTextField(15);
         returnTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        returnTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای فیلد
+        returnTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         JButton nowReturnButton = new JButton("الان");
         nowReturnButton.setFont(new Font("Arial", Font.PLAIN, 12));
-        nowReturnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
-        nowReturnButton.addActionListener(e -> {
-            LocalDateTime now = LocalDateTime.now();
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-            returnTimeField.setText(now.format(formatter));
-        });
+        nowReturnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        nowReturnButton.addActionListener(e -> returnTimeField.setText(getDate()));
         returnTimePanel.add(returnTimeField);
         returnTimePanel.add(nowReturnButton);
         returnPanel.add(returnTimePanel, gbc);
@@ -186,36 +157,46 @@ public class AdminUI {
         returnButton.setFont(new Font("Arial", Font.BOLD, 14));
         returnButton.setBackground(new Color(0, 120, 215));
         returnButton.setForeground(Color.WHITE);
-        returnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
+        returnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnButton.addActionListener(e -> {
-            returnCar();
-            rentalCodeField.setText("");
-            returnTimeField.setText("");
+            try {
+                returnCar();
+                rentalCodeField.setText("");
+                returnTimeField.setText("");
+            } catch (SQLException ex) {
+                logger.log(Level.SEVERE, "Error in returnCar", ex);
+            }
         });
         returnPanel.add(returnButton, gbc);
 
         // --- دکمه‌ها ---
+        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        buttonsPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
         addItemsButton.setFont(new Font("Arial", Font.BOLD, 14));
         addItemsButton.setBackground(new Color(34, 139, 34));
         addItemsButton.setForeground(Color.WHITE);
-        addItemsButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
+        addItemsButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         addItemsButton.addActionListener(e -> new AddFrame());
         JButton reportButton = new JButton("نمایش گزارش");
         reportButton.setFont(new Font("Arial", Font.BOLD, 14));
         reportButton.setBackground(new Color(139, 69, 19));
         reportButton.setForeground(Color.WHITE);
-        reportButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای دکمه
+        reportButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         reportButton.addActionListener(e -> new ReportFrame());
-
-        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
-        buttonsPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل دکمه‌ها
+        JButton manageButton = new JButton("مدیریت ماشین‌ها و کارمندها");
+        manageButton.setFont(new Font("Arial", Font.BOLD, 14));
+        manageButton.setBackground(new Color(165, 42, 42));
+        manageButton.setForeground(Color.WHITE);
+        manageButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        manageButton.addActionListener(e -> new ManageFrame());
+        buttonsPanel.add(manageButton);
         buttonsPanel.add(addItemsButton);
         buttonsPanel.add(reportButton);
 
         // چیدمان اصلی
         JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
-        mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT); // RTL برای پانل اصلی
+        mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         mainPanel.add(pickupPanel);
         mainPanel.add(returnPanel);
         frame.add(mainPanel, BorderLayout.CENTER);
@@ -226,12 +207,11 @@ public class AdminUI {
     }
 
     private void loadVehicles() {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
+        try (Connection conn = dbManager.getConnection()) {
             Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT name, color, plate FROM Car");
+            ResultSet rs = stmt.executeQuery("SELECT name, plate, color FROM Car");
             while (rs.next()) {
-                String car = rs.getString("name") + " - " + rs.getString("color") +
-                        " - " + rs.getString("plate");
+                String car = rs.getString("name") + " - " + rs.getString("plate") + " - " + rs.getString("color");
                 vehicleCombo.addItem(car);
             }
         } catch (SQLException e) {
@@ -240,7 +220,7 @@ public class AdminUI {
     }
 
     private void loadEmployees() {
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
+        try (Connection conn = dbManager.getConnection()) {
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT name FROM Employee");
             while (rs.next()) {
@@ -258,82 +238,108 @@ public class AdminUI {
         return String.valueOf(num);
     }
 
-    private void pickupCar() {
+    private void pickupCar() throws SQLException {
         String rentalCode = generateRentalCode();
-        String sql = "INSERT INTO CarRental(rental_code, employee_phone, car_plate, delivery_date, destination) " +
-                "VALUES (?, ?, ?, ?, ?)";
-        try {
-            String selectedEmpPhone = null;
-            try (PreparedStatement empStmt = conn.prepareStatement("SELECT phone FROM Employee WHERE name = ?")) {
-                empStmt.setString(1, (String) employeeCombo.getSelectedItem());
-                ResultSet rs = empStmt.executeQuery();
-                if (rs.next()) {
-                    selectedEmpPhone = rs.getString("phone");
-                }
-            }
+        String selectedEmpPhone = getEmployeePhone((String) employeeCombo.getSelectedItem());
+        String selectedCar = (String) vehicleCombo.getSelectedItem();
+        String selectedCarPlate = Optional.ofNullable(selectedCar)
+                .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
+        String pickupTime = pickupTimeField.getText();
+        String destination = destinationField.getText();
 
-            String selectedCar = (String) vehicleCombo.getSelectedItem();
-            String selectedCarPlate = Optional.ofNullable(selectedCar)
-                    .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
-
-            String pickupTime = pickupTimeField.getText();
-            String destination = destinationField.getText();
-            if (pickupTime.isEmpty() || destination.isEmpty()) {
-                JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
-                return;
-            }
-
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setString(1, rentalCode);
-                stmt.setString(2, selectedEmpPhone);
-                stmt.setString(3, selectedCarPlate);
-                stmt.setString(4, pickupTimeField.getText());
-                stmt.setString(5, destinationField.getText());
-                stmt.executeUpdate();
-            }
-
-            JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
-
-            pickupTimeField.setText("");
-            destinationField.setText("");
-
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
+        if (pickupTime.isEmpty() || destination.isEmpty()) {
+            JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
+            return;
         }
+
+        dbManager.assignVehicle(rentalCode, selectedEmpPhone, selectedCarPlate, pickupTime, destination);
+        JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
+
+        pickupTimeField.setText("");
+        destinationField.setText("");
     }
 
-    private void returnCar() {
-        String checkSql = "SELECT * FROM CarRental WHERE rental_code = ? AND return_date IS NULL";
-        String returnTime = returnTimeField.getText();
+    private void returnCar() throws SQLException {
         String rentalCode = rentalCodeField.getText();
+        String returnTime = returnTimeField.getText();
+
         if (returnTime.isEmpty() || rentalCode.isEmpty()) {
             JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
             return;
         }
-        try (PreparedStatement stmt = conn.prepareStatement(checkSql)) {
-            stmt.setString(1, rentalCodeField.getText());
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                String updateSql = "UPDATE CarRental SET return_date = ? WHERE rental_code = ?";
-                try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
-                    updateStmt.setString(1, returnTime);
-                    updateStmt.setString(2, rentalCode);
-                    updateStmt.executeUpdate();
-                    JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
-                }
-            } else {
-                JOptionPane.showMessageDialog(null, "کد تحویل نامعتبر یا قبلاً ثبت شده است!");
+
+        dbManager.returnVehicle(rentalCode, returnTime);
+        JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
+
+        returnTimeField.setText("");
+        rentalCodeField.setText("");
+    }
+
+    private String getEmployeePhone(String empName) throws SQLException {
+        try (Connection conn = dbManager.getConnection()) {
+            String sql = "SELECT phone FROM Employee WHERE name = ?";
+            try (PreparedStatement preparedStatement = conn.prepareStatement(sql)) {
+                preparedStatement.setString(1, empName);
+                ResultSet rs = preparedStatement.executeQuery();
+                return rs.next() ? rs.getString("phone") : null;
             }
-
-            returnTimeField.setText("");
-            rentalCodeField.setText("");
-
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
+    }
+
+    private static String getDate() {
+        LocalDateTime now = LocalDateTime.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        String[] date_time = now.format(formatter).split(" ");
+        String[] date = date_time[0].split("-");
+        int[] shams_date = DateConverter.gregorian_to_jalali(
+                Integer.parseInt(date[0]), Integer.parseInt(date[1]), Integer.parseInt(date[2]));
+
+        return shams_date[0] + "/" + shams_date[1] + "/" + shams_date[2] + " " + date_time[1];
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(AdminUI::new);
+    }
+
+    static class DateConverter {
+
+        /**
+         * Gregorian & Jalali (Hijri_Shams,Solar) Date Converter Functions
+         * Author: JDF.SCR.IR =>> Download Full Version :  <a href="http://jdf.scr.ir/jdf">...</a>
+         * License: GNU/LGPL _ Open Source & Free :: Version: 2.80 : [2020=1399]
+         * ---------------------------------------------------------------------
+         * 355746=361590-5844 & 361590=(30*33*365)+(30*8) & 5844=(16*365)+(16/4)
+         * 355666=355746-79-1 & 355668=355746-79+1 &  1595=605+990 &  605=621-16
+         * 990=30*33 & 12053=(365*33)+(32/4) & 36524=(365*100)+(100/4)-(100/100)
+         * 1461=(365*4)+(4/4) & 146097=(365*400)+(400/4)-(400/100)+(400/400)
+         */
+
+        public static int[] gregorian_to_jalali(int gy, int gm, int gd) {
+            int[] out = {
+                    (gm > 2) ? (gy + 1) : gy,
+                    0,
+                    0
+            };
+            {
+                int[] g_d_m = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+                out[2] = 355666 + (365 * gy) + (((out[0] + 3) / 4)) - (((out[0] + 99) / 100)) + (((out[0] + 399) / 400)) + gd + g_d_m[gm - 1];
+            }
+            out[0] = -1595 + (33 * ((out[2] / 12053)));
+            out[2] %= 12053;
+            out[0] += 4 * ((out[2] / 1461));
+            out[2] %= 1461;
+            if (out[2] > 365) {
+                out[0] += ((out[2] - 1) / 365);
+                out[2] = (out[2] - 1) % 365;
+            }
+            if (out[2] < 186) {
+                out[1] = 1 + (out[2] / 31);
+                out[2] = 1 + (out[2] % 31);
+            } else {
+                out[1] = 7 + ((out[2] - 186) / 30);
+                out[2] = 1 + ((out[2] - 186) % 30);
+            }
+            return out;
+        }
     }
 }
