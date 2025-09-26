@@ -96,6 +96,8 @@ public class AddFrame extends JFrame {
         add(vehiclePanel);
         add(employeePanel);
 
+        DatabaseManager db = new DatabaseManager();
+
         // ----------------- عملیات اضافه کردن ماشین -----------------
         addVehicleButton.addActionListener(e -> {
             String name = modelField.getText().trim();
@@ -110,14 +112,8 @@ public class AddFrame extends JFrame {
                 return;
             }
 
-            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
-                String sql = "INSERT INTO Car(name, plate, color) VALUES(?,?,?)";
-                PreparedStatement preparedStatement = conn.prepareStatement(sql);
-                preparedStatement.setString(1, name);
-                preparedStatement.setString(2, plate);
-                preparedStatement.setString(3, color);
-                preparedStatement.executeUpdate();
-
+            try {
+                db.addVehicle(name, plate, color);
                 JOptionPane.showMessageDialog(null, "ماشین با موفقیت اضافه شد!");
                 modelField.setText("");
                 firstTwo.setText("");
@@ -141,14 +137,8 @@ public class AddFrame extends JFrame {
                 return;
             }
 
-            try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db")) {
-                String sql = "INSERT INTO Employee(name, phone, telegram_id) VALUES(?,?,?)";
-                PreparedStatement preparedStatement = conn.prepareStatement(sql);
-                preparedStatement.setString(1, name);
-                preparedStatement.setString(2, phone);
-                preparedStatement.setString(3, telId);
-                preparedStatement.executeUpdate();
-
+            try {
+                db.addEmployee(name, phone, telId);
                 JOptionPane.showMessageDialog(null, "کارمند با موفقیت اضافه شد!");
                 nameField.setText("");
                 phoneField.setText("");

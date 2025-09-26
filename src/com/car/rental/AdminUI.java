@@ -6,12 +6,11 @@ import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Random;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.Optional;
 
 public class AdminUI {
-    private DatabaseManager dbManager;
+    private final DatabaseManager db;
     private JComboBox<String> vehicleCombo;
     private JComboBox<String> employeeCombo;
     private JTextField pickupTimeField, destinationField;
@@ -19,7 +18,8 @@ public class AdminUI {
     private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
 
     public AdminUI() {
-        dbManager = new DatabaseManager();
+        db = new DatabaseManager();
+        db.initDatabase();
         createMainUI();
     }
 
@@ -31,7 +31,25 @@ public class AdminUI {
         frame.getContentPane().setBackground(new Color(245, 245, 250));
         frame.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        // --- بخش تحویل ---
+        // پنل‌های جدا
+        JPanel pickupPanel = createPickupPanel();
+        JPanel returnPanel = createReturnPanel();
+        JPanel buttonsPanel = createButtonsPanel();
+
+        // چیدمان اصلی
+        JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
+        mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        mainPanel.add(pickupPanel);
+        mainPanel.add(returnPanel);
+
+        frame.add(mainPanel, BorderLayout.CENTER);
+        frame.add(buttonsPanel, BorderLayout.SOUTH);
+
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+    }
+
+    private JPanel createPickupPanel() {
         JPanel pickupPanel = new JPanel(new GridBagLayout());
         pickupPanel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
         pickupPanel.setBackground(Color.WHITE);
@@ -50,7 +68,14 @@ public class AdminUI {
         vehicleCombo = new JComboBox<>();
         vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        loadVehicles();
+        try {
+            for (String car : db.getVehicles()) {
+                vehicleCombo.addItem(car);
+            }
+        } catch (SQLException e) {
+            logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
+            JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
+        }
         pickupPanel.add(vehicleCombo, gbc);
 
         // کارمند
@@ -62,7 +87,14 @@ public class AdminUI {
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        loadEmployees();
+        try {
+            for (String emp : db.getEmployees()) {
+                employeeCombo.addItem(emp.substring(0, emp.indexOf("-")));
+            }
+        } catch (SQLException e) {
+            logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
+            JOptionPane.showMessageDialog(null, "خطا در خواندن کارمندها: " + e.getMessage());
+        }
         pickupPanel.add(employeeCombo, gbc);
 
         // زمان تحویل
@@ -104,21 +136,24 @@ public class AdminUI {
         pickupButton.setForeground(Color.WHITE);
         pickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupButton.addActionListener(e -> {
-            try {
-                pickupCar();
-                pickupTimeField.setText("");
-                destinationField.setText("");
-            } catch (SQLException ex) {
-                logger.log(Level.SEVERE, "Error in pickupCar", ex);
-            }
+            pickupCar();
+            pickupTimeField.setText("");
+            destinationField.setText("");
         });
         pickupPanel.add(pickupButton, gbc);
 
-        // --- بخش بازگشت ---
+        return pickupPanel;
+    }
+
+    private JPanel createReturnPanel() {
         JPanel returnPanel = new JPanel(new GridBagLayout());
         returnPanel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
         returnPanel.setBackground(Color.WHITE);
         returnPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 15, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // کد تحویل
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
@@ -159,77 +194,42 @@ public class AdminUI {
         returnButton.setForeground(Color.WHITE);
         returnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnButton.addActionListener(e -> {
-            try {
-                returnCar();
-                rentalCodeField.setText("");
-                returnTimeField.setText("");
-            } catch (SQLException ex) {
-                logger.log(Level.SEVERE, "Error in returnCar", ex);
-            }
+            returnCar();
+            rentalCodeField.setText("");
+            returnTimeField.setText("");
         });
         returnPanel.add(returnButton, gbc);
 
-        // --- دکمه‌ها ---
+        return returnPanel;
+    }
+
+    private JPanel createButtonsPanel() {
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
         buttonsPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+
         JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
         addItemsButton.setFont(new Font("Arial", Font.BOLD, 14));
         addItemsButton.setBackground(new Color(34, 139, 34));
         addItemsButton.setForeground(Color.WHITE);
-        addItemsButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         addItemsButton.addActionListener(e -> new AddFrame());
+
         JButton reportButton = new JButton("نمایش گزارش");
         reportButton.setFont(new Font("Arial", Font.BOLD, 14));
         reportButton.setBackground(new Color(139, 69, 19));
         reportButton.setForeground(Color.WHITE);
-        reportButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         reportButton.addActionListener(e -> new ReportFrame());
+
         JButton manageButton = new JButton("مدیریت ماشین‌ها و کارمندها");
         manageButton.setFont(new Font("Arial", Font.BOLD, 14));
         manageButton.setBackground(new Color(165, 42, 42));
         manageButton.setForeground(Color.WHITE);
-        manageButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         manageButton.addActionListener(e -> new ManageFrame());
+
+        buttonsPanel.add(reportButton);
         buttonsPanel.add(manageButton);
         buttonsPanel.add(addItemsButton);
-        buttonsPanel.add(reportButton);
 
-        // چیدمان اصلی
-        JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
-        mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        mainPanel.add(pickupPanel);
-        mainPanel.add(returnPanel);
-        frame.add(mainPanel, BorderLayout.CENTER);
-        frame.add(buttonsPanel, BorderLayout.SOUTH);
-
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-    }
-
-    private void loadVehicles() {
-        try (Connection conn = dbManager.getConnection()) {
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT name, plate, color FROM Car");
-            while (rs.next()) {
-                String car = rs.getString("name") + " - " + rs.getString("plate") + " - " + rs.getString("color");
-                vehicleCombo.addItem(car);
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
-        }
-    }
-
-    private void loadEmployees() {
-        try (Connection conn = dbManager.getConnection()) {
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT name FROM Employee");
-            while (rs.next()) {
-                String employee = rs.getString("name");
-                employeeCombo.addItem(employee);
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا در خواندن کارمند‌ها: " + e.getMessage());
-        }
+        return buttonsPanel;
     }
 
     private String generateRentalCode() {
@@ -238,51 +238,59 @@ public class AdminUI {
         return String.valueOf(num);
     }
 
-    private void pickupCar() throws SQLException {
-        String rentalCode = generateRentalCode();
-        String selectedEmpPhone = getEmployeePhone((String) employeeCombo.getSelectedItem());
-        String selectedCar = (String) vehicleCombo.getSelectedItem();
-        String selectedCarPlate = Optional.ofNullable(selectedCar)
-                .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
-        String pickupTime = pickupTimeField.getText();
-        String destination = destinationField.getText();
+    private void pickupCar() {
+        try {
+            String rentalCode = generateRentalCode();
 
-        if (pickupTime.isEmpty() || destination.isEmpty()) {
-            JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
-            return;
+            String selectedEmpName = (String) employeeCombo.getSelectedItem();
+            String empPhone = db.getEmployeePhoneByName(selectedEmpName);
+
+            String selectedCar = (String) vehicleCombo.getSelectedItem();
+            String carPlate = Optional.ofNullable(selectedCar)
+                    .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
+
+            String pickupTime = pickupTimeField.getText();
+            String destination = destinationField.getText();
+
+            if (pickupTime.isEmpty() || destination.isEmpty()) {
+                JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
+                return;
+            }
+
+            db.insertRental(rentalCode, empPhone, carPlate, pickupTime, destination);
+
+            JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
+
+            pickupTimeField.setText("");
+            destinationField.setText("");
+
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
-
-        dbManager.assignVehicle(rentalCode, selectedEmpPhone, selectedCarPlate, pickupTime, destination);
-        JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
-
-        pickupTimeField.setText("");
-        destinationField.setText("");
     }
 
-    private void returnCar() throws SQLException {
-        String rentalCode = rentalCodeField.getText();
+    private void returnCar() {
         String returnTime = returnTimeField.getText();
+        String rentalCode = rentalCodeField.getText();
 
         if (returnTime.isEmpty() || rentalCode.isEmpty()) {
             JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
             return;
         }
 
-        dbManager.returnVehicle(rentalCode, returnTime);
-        JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
-
-        returnTimeField.setText("");
-        rentalCodeField.setText("");
-    }
-
-    private String getEmployeePhone(String empName) throws SQLException {
-        try (Connection conn = dbManager.getConnection()) {
-            String sql = "SELECT phone FROM Employee WHERE name = ?";
-            try (PreparedStatement preparedStatement = conn.prepareStatement(sql)) {
-                preparedStatement.setString(1, empName);
-                ResultSet rs = preparedStatement.executeQuery();
-                return rs.next() ? rs.getString("phone") : null;
+        try {
+            boolean success = db.returnCar(rentalCode, returnTime);
+            if (success) {
+                JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
+            } else {
+                JOptionPane.showMessageDialog(null, "کد تحویل وجود ندارد یا قبلاً بازگشت ثبت شده است!");
             }
+
+            returnTimeField.setText("");
+            rentalCodeField.setText("");
+
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
     }
 

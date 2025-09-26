@@ -2,16 +2,20 @@ package com.car.rental;
 
 import javax.swing.*;
 import java.awt.*;
+import java.sql.SQLException;
 
 public class ManageFrame extends JFrame {
+    private final DatabaseManager db;
     private JTabbedPane tabbedPane;
     private JList<String> carList, employeeList;
     private DefaultListModel<String> carModel, employeeModel;
     private JTextField editNameField, editPlateField, editColorField, editPhoneField, editTelIdField;
     private String selectedCar, selectedEmployee;
+
     public ManageFrame() {
+        db = new DatabaseManager();
         initializeUI();
-        loadSampleData();
+        loadDataFromDB();
         setVisible(true);
     }
 
@@ -90,13 +94,21 @@ public class ManageFrame extends JFrame {
         add(editPanel, BorderLayout.SOUTH);
     }
 
-    private void loadSampleData() {
-      // یاسین اینجا رو گذاشتم برای تست چون فعلا به دیستا بیس وصل نیست
-        carModel.addElement("");
-        carModel.addElement("");
-        employeeModel.addElement("");
-        employeeModel.addElement("");
+    private void loadDataFromDB() {
+        carModel.clear();
+        employeeModel.clear();
+        try {
+            for (String car : db.getVehicles()) {
+                carModel.addElement(car);
+            }
+            for (String emp : db.getEmployees()) {
+                employeeModel.addElement(emp);
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "خطا در بارگذاری داده‌ها: " + e.getMessage());
+        }
     }
+
 
     private void editCar() {
         selectedCar = carList.getSelectedValue();
@@ -108,19 +120,47 @@ public class ManageFrame extends JFrame {
             editPhoneField.setText("");
             editTelIdField.setText("");
             tabbedPane.setVisible(false);
-            ((JPanel) getContentPane().getComponent(1)).setVisible(true);
+            getContentPane().getComponent(1).setVisible(true);
         } else {
             JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
         }
     }
 
     private void deleteCar() {
-        selectedCar = carList.getSelectedValue();
-        if (selectedCar != null) {
-            carModel.removeElement(selectedCar);
-            JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
-        } else {
-            JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
+        String selected = carList.getSelectedValue();
+
+        JButton yesButton = new JButton("بله، حذف شود");
+        yesButton.setBackground(Color.RED);
+        yesButton.setForeground(Color.WHITE);
+
+        JButton noButton = new JButton("خیر، منصرف شدم");
+        noButton.setBackground(Color.GRAY);
+        noButton.setForeground(Color.WHITE);
+
+        Object[] options = {yesButton, noButton};
+
+        if (selected != null) {
+            int option = JOptionPane.showOptionDialog(
+                    this,                                      // والد پنجره
+                    "آیا مطمئن هستید که می‌خواهید این ماشین را حذف کنید؟", // پیام
+                    "تأیید حذف",                              // عنوان پنجره
+                    JOptionPane.YES_NO_OPTION,                 // نوع گزینه‌ها
+                    JOptionPane.WARNING_MESSAGE,               // نوع آیکون
+                    null,
+                    options,                                   // دکمه‌ها
+                    noButton                                  // دکمه پیش‌فرض
+            );
+
+            if (option == 0) {
+                try {
+                    String plate = selected.substring(selected.lastIndexOf("-") + 2);
+                    db.deleteCar(plate);
+                    carModel.removeElement(selected);
+                    JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
+                } catch (SQLException e) {
+                    JOptionPane.showMessageDialog(this, "خطا در حذف ماشین: " + e.getMessage());
+                }
+            }
         }
     }
 
@@ -134,19 +174,47 @@ public class ManageFrame extends JFrame {
             editPlateField.setText("");
             editColorField.setText("");
             tabbedPane.setVisible(false);
-            ((JPanel) getContentPane().getComponent(1)).setVisible(true);
+            getContentPane().getComponent(1).setVisible(true);
         } else {
             JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
         }
     }
 
     private void deleteEmployee() {
-        selectedEmployee = employeeList.getSelectedValue();
-        if (selectedEmployee != null) {
-            employeeModel.removeElement(selectedEmployee);
-            JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
-        } else {
-            JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
+        String selected = employeeList.getSelectedValue();
+
+        JButton yesButton = new JButton("بله، حذف شود");
+        yesButton.setBackground(Color.RED);
+        yesButton.setForeground(Color.WHITE);
+
+        JButton noButton = new JButton("خیر، منصرف شدم");
+        noButton.setBackground(Color.GRAY);
+        noButton.setForeground(Color.WHITE);
+
+        Object[] options = {yesButton, noButton};
+
+        if (selected != null) {
+            int option = JOptionPane.showOptionDialog(
+                    this,                                      // والد پنجره
+                    "آیا مطمئن هستید که می‌خواهید این کارمند را حذف کنید؟", // پیام
+                    "تأیید حذف",                              // عنوان پنجره
+                    JOptionPane.YES_NO_OPTION,                 // نوع گزینه‌ها
+                    JOptionPane.WARNING_MESSAGE,               // نوع آیکون
+                    null,
+                    options,                                   // دکمه‌ها
+                    noButton                                  // دکمه پیش‌فرض
+            );
+
+            if (option == 0) {
+                try {
+                    String phone = selected.split(" - ")[1];
+                    db.deleteEmployee(phone);
+                    employeeModel.removeElement(selected);
+                    JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
+                } catch (SQLException e) {
+                    JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());
+                }
+            }
         }
     }
 
@@ -161,7 +229,7 @@ public class ManageFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "کارمند ویرایش شد!");
         }
         tabbedPane.setVisible(true);
-        ((JPanel) getContentPane().getComponent(1)).setVisible(false);
+        getContentPane().getComponent(1).setVisible(false);
         editNameField.setText("");
         editPlateField.setText("");
         editColorField.setText("");
