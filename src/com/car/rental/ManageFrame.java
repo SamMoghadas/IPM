@@ -128,32 +128,13 @@ public class ManageFrame extends JFrame {
 
     private void deleteCar() {
         String selected = carList.getSelectedValue();
-
-        JButton yesButton = new JButton("بله، حذف شود");
-        yesButton.setBackground(Color.RED);
-        yesButton.setForeground(Color.WHITE);
-
-        JButton noButton = new JButton("خیر، منصرف شدم");
-        noButton.setBackground(Color.GRAY);
-        noButton.setForeground(Color.WHITE);
-
-        Object[] options = {yesButton, noButton};
-
         if (selected != null) {
-            int option = JOptionPane.showOptionDialog(
-                    this,                                      // والد پنجره
-                    "آیا مطمئن هستید که می‌خواهید این ماشین را حذف کنید؟", // پیام
-                    "تأیید حذف",                              // عنوان پنجره
-                    JOptionPane.YES_NO_OPTION,                 // نوع گزینه‌ها
-                    JOptionPane.WARNING_MESSAGE,               // نوع آیکون
-                    null,
-                    options,                                   // دکمه‌ها
-                    noButton                                  // دکمه پیش‌فرض
+            boolean confirmed = deleteConfirmDialog(
+                    "آیا مطمئن هستید که می‌خواهید این ماشین را حذف کنید؟"
             );
-
-            if (option == 0) {
+            if (confirmed) {
                 try {
-                    String plate = selected.substring(selected.lastIndexOf("-") + 2);
+                    String plate = selected.split(" - ")[2];
                     db.deleteCar(plate);
                     carModel.removeElement(selected);
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
@@ -182,30 +163,11 @@ public class ManageFrame extends JFrame {
 
     private void deleteEmployee() {
         String selected = employeeList.getSelectedValue();
-
-        JButton yesButton = new JButton("بله، حذف شود");
-        yesButton.setBackground(Color.RED);
-        yesButton.setForeground(Color.WHITE);
-
-        JButton noButton = new JButton("خیر، منصرف شدم");
-        noButton.setBackground(Color.GRAY);
-        noButton.setForeground(Color.WHITE);
-
-        Object[] options = {yesButton, noButton};
-
         if (selected != null) {
-            int option = JOptionPane.showOptionDialog(
-                    this,                                      // والد پنجره
-                    "آیا مطمئن هستید که می‌خواهید این کارمند را حذف کنید؟", // پیام
-                    "تأیید حذف",                              // عنوان پنجره
-                    JOptionPane.YES_NO_OPTION,                 // نوع گزینه‌ها
-                    JOptionPane.WARNING_MESSAGE,               // نوع آیکون
-                    null,
-                    options,                                   // دکمه‌ها
-                    noButton                                  // دکمه پیش‌فرض
+            boolean confirmed = deleteConfirmDialog(
+                    "آیا مطمئن هستید که می‌خواهید این کارمند را حذف کنید؟"
             );
-
-            if (option == 0) {
+            if (confirmed) {
                 try {
                     String phone = selected.split(" - ")[1];
                     db.deleteEmployee(phone);
@@ -237,5 +199,39 @@ public class ManageFrame extends JFrame {
         editTelIdField.setText("");
         selectedCar = null;
         selectedEmployee = null;
+    }
+
+    private boolean deleteConfirmDialog(String message) {
+        JDialog dialog = new JDialog(this, "تأیید حذف", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+
+        JLabel msgLabel = new JLabel(message, SwingConstants.CENTER);
+        dialog.add(msgLabel, BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        JButton yesButton = new JButton("بله، حذف شود");
+        yesButton.setBackground(Color.RED);
+        yesButton.setForeground(Color.WHITE);
+
+        JButton noButton = new JButton("خیر، منصرف شدم");
+        noButton.setBackground(Color.GRAY);
+        noButton.setForeground(Color.WHITE);
+
+        buttonPanel.add(yesButton);
+        buttonPanel.add(noButton);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        final boolean[] confirmed = {false};
+        yesButton.addActionListener(e -> {
+            confirmed[0] = true;
+            dialog.dispose();
+        });
+        noButton.addActionListener(e -> dialog.dispose());
+
+        dialog.setSize(350, 150);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+
+        return confirmed[0];
     }
 }
