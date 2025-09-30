@@ -135,7 +135,8 @@ public class ManageFrame extends JFrame {
             if (confirmed) {
                 try {
                     String plate = selected.split(" - ")[2];
-                    db.deleteCar(plate);
+                    AdminUI adminUI = AdminUI.getInstance();
+                    db.deleteCar(plate, adminUI::loadVehicles);
                     carModel.removeElement(selected);
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
                 } catch (SQLException e) {
@@ -170,7 +171,8 @@ public class ManageFrame extends JFrame {
             if (confirmed) {
                 try {
                     String phone = selected.split(" - ")[1];
-                    db.deleteEmployee(phone);
+                    AdminUI adminUI = AdminUI.getInstance();
+                    db.deleteEmployee(phone, adminUI::loadEmployees);
                     employeeModel.removeElement(selected);
                     JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
                 } catch (SQLException e) {

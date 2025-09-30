@@ -10,6 +10,7 @@ import java.util.logging.Logger;
 import java.util.Optional;
 
 public class AdminUI {
+    private static AdminUI instance;
     private final DatabaseManager db;
     private JComboBox<String> vehicleCombo;
     private JComboBox<String> employeeCombo;
@@ -17,10 +18,17 @@ public class AdminUI {
     private JTextField rentalCodeField, returnTimeField;
     private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
 
-    public AdminUI() {
+    private AdminUI() {
         db = new DatabaseManager();
         db.initDatabase();
         createMainUI();
+    }
+
+    public static AdminUI getInstance() {
+        if (instance == null) {
+            instance = new AdminUI();
+        }
+        return instance;
     }
 
     private void createMainUI() {
@@ -68,14 +76,7 @@ public class AdminUI {
         vehicleCombo = new JComboBox<>();
         vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        try {
-            for (String car : db.getVehicles()) {
-                vehicleCombo.addItem(car);
-            }
-        } catch (SQLException e) {
-            logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
-            JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
-        }
+        loadVehicles();
         pickupPanel.add(vehicleCombo, gbc);
 
         // کارمند
@@ -87,14 +88,7 @@ public class AdminUI {
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        try {
-            for (String emp : db.getEmployees()) {
-                employeeCombo.addItem(emp.substring(0, emp.indexOf("-")));
-            }
-        } catch (SQLException e) {
-            logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
-            JOptionPane.showMessageDialog(null, "خطا در خواندن کارمندها: " + e.getMessage());
-        }
+        loadEmployees();
         pickupPanel.add(employeeCombo, gbc);
 
         // زمان تحویل
@@ -230,6 +224,30 @@ public class AdminUI {
         buttonsPanel.add(addItemsButton);
 
         return buttonsPanel;
+    }
+
+    public void loadVehicles() {
+        vehicleCombo.removeAllItems();
+        try {
+            for (String car : db.getVehicles()) {
+                vehicleCombo.addItem(car);
+            }
+        } catch (SQLException e) {
+            logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
+            JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
+        }
+    }
+
+    public void loadEmployees() {
+        employeeCombo.removeAllItems();
+        try {
+            for (String emp : db.getEmployees()) {
+                employeeCombo.addItem(emp.substring(0, emp.indexOf("-")));
+            }
+        } catch (SQLException e) {
+            logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
+            JOptionPane.showMessageDialog(null, "خطا در خواندن کارمندها: " + e.getMessage());
+        }
     }
 
     private String generateRentalCode() {

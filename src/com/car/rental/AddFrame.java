@@ -113,7 +113,8 @@ public class AddFrame extends JFrame {
             }
 
             try {
-                db.addVehicle(name, plate, color);
+                AdminUI adminUI = AdminUI.getInstance();
+                db.addVehicle(name, plate, color, adminUI::loadVehicles);
                 JOptionPane.showMessageDialog(null, "ماشین با موفقیت اضافه شد!");
                 modelField.setText("");
                 firstTwo.setText("");
@@ -138,7 +139,8 @@ public class AddFrame extends JFrame {
             }
 
             try {
-                db.addEmployee(name, phone, telId);
+                AdminUI adminUI = AdminUI.getInstance();
+                db.addEmployee(name, phone, telId, adminUI::loadEmployees);
                 JOptionPane.showMessageDialog(null, "کارمند با موفقیت اضافه شد!");
                 nameField.setText("");
                 phoneField.setText("");

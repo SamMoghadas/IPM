@@ -127,7 +127,7 @@ public class DatabaseManager {
     }
 
     // --- افزودن ماشین ---
-    public void addVehicle(String name, String plate, String color) throws SQLException {
+    public void addVehicle(String name, String plate, String color, DataChangeCallback callback) throws SQLException {
         String sql = "INSERT INTO Car(name, plate, color) VALUES(?,?,?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -135,11 +135,12 @@ public class DatabaseManager {
             stmt.setString(2, plate);
             stmt.setString(3, color);
             stmt.executeUpdate();
+            callback.onDataChange();
         }
     }
 
     // --- افزودن کارمند ---
-    public void addEmployee(String name, String phone, String telegramId) throws SQLException {
+    public void addEmployee(String name, String phone, String telegramId, DataChangeCallback callback) throws SQLException {
         String sql = "INSERT INTO Employee(name, phone, telegram_id) VALUES(?,?,?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -147,26 +148,29 @@ public class DatabaseManager {
             stmt.setString(2, phone);
             stmt.setString(3, telegramId);
             stmt.executeUpdate();
+            callback.onDataChange();
         }
     }
 
     // --- حذف ماشین ---
-    public void deleteCar(String plate) throws SQLException {
+    public void deleteCar(String plate, DataChangeCallback callback) throws SQLException {
         String sql = "DELETE FROM Car WHERE plate = ?";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, plate);
             stmt.executeUpdate();
+            callback.onDataChange();
         }
     }
 
     // --- حذف کارمند ---
-    public void deleteEmployee(String phone) throws SQLException {
+    public void deleteEmployee(String phone, DataChangeCallback callback) throws SQLException {
         String sql = "DELETE FROM Employee WHERE phone = ?";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, phone);
             stmt.executeUpdate();
+            callback.onDataChange();
         }
     }
 }
