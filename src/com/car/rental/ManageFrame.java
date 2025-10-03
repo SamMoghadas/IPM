@@ -98,7 +98,7 @@ public class ManageFrame extends JFrame {
         carModel.clear();
         employeeModel.clear();
         try {
-            for (String car : db.getVehicles()) {
+            for (String car : db.getCars()) {
                 carModel.addElement(car);
             }
             for (String emp : db.getEmployees()) {
@@ -136,7 +136,7 @@ public class ManageFrame extends JFrame {
                 try {
                     String plate = selected.split(" - ")[2];
                     AdminUI adminUI = AdminUI.getInstance();
-                    db.deleteCar(plate, adminUI::loadVehicles);
+                    db.deleteCar(plate, adminUI::loadCars);
                     carModel.removeElement(selected);
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
                 } catch (SQLException e) {
@@ -170,9 +170,9 @@ public class ManageFrame extends JFrame {
             );
             if (confirmed) {
                 try {
-                    String phone = selected.split(" - ")[1];
+                    int personnelId = Integer.parseInt(selected.split(" - ")[0]);
                     AdminUI adminUI = AdminUI.getInstance();
-                    db.deleteEmployee(phone, adminUI::loadEmployees);
+                    db.deleteEmployee(personnelId, adminUI::loadEmployees);
                     employeeModel.removeElement(selected);
                     JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
                 } catch (SQLException e) {

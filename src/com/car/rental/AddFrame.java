@@ -15,9 +15,9 @@ public class AddFrame extends JFrame {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
         // ----------------- پنل اضافه کردن ماشین -----------------
-        JPanel vehiclePanel = new JPanel(new GridLayout(4, 2, 10, 10));
-        vehiclePanel.setBorder(BorderFactory.createTitledBorder("اضافه کردن ماشین"));
-        vehiclePanel.setBackground(new Color(255, 255, 255));
+        JPanel carPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        carPanel.setBorder(BorderFactory.createTitledBorder("اضافه کردن ماشین"));
+        carPanel.setBackground(new Color(255, 255, 255));
 
         JLabel modelLabel = new JLabel("نام ماشین:");
         JTextField modelField = new JTextField(20);
@@ -56,21 +56,24 @@ public class AddFrame extends JFrame {
         JTextField colorField = new JTextField(20);
         colorField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        JButton addVehicleButton = new JButton("اضافه کردن ماشین");
+        JButton addCarButton = new JButton("اضافه کردن ماشین");
 
-        vehiclePanel.add(modelLabel);
-        vehiclePanel.add(modelField);
-        vehiclePanel.add(plateLabel);
-        vehiclePanel.add(platePanel);
-        vehiclePanel.add(colorLabel);
-        vehiclePanel.add(colorField);
-        vehiclePanel.add(new JLabel());
-        vehiclePanel.add(addVehicleButton);
+        carPanel.add(modelLabel);
+        carPanel.add(modelField);
+        carPanel.add(plateLabel);
+        carPanel.add(platePanel);
+        carPanel.add(colorLabel);
+        carPanel.add(colorField);
+        carPanel.add(new JLabel());
+        carPanel.add(addCarButton);
 
         // ----------------- پنل اضافه کردن کارمند -----------------
-        JPanel employeePanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        JPanel employeePanel = new JPanel(new GridLayout(5, 2, 10, 10));
         employeePanel.setBorder(BorderFactory.createTitledBorder("اضافه کردن کارمند"));
         employeePanel.setBackground(new Color(255, 255, 255));
+
+        JLabel personnelIdLabel = new JLabel("شماره پرسنلی:");
+        JTextField personnelIdField = new JTextField(20);
 
         JLabel nameLabel = new JLabel("نام:");
         JTextField nameField = new JTextField(20);
@@ -84,6 +87,8 @@ public class AddFrame extends JFrame {
 
         JButton addEmployeeButton = new JButton("اضافه کردن کارمند");
 
+        employeePanel.add(personnelIdLabel);
+        employeePanel.add(personnelIdField);
         employeePanel.add(nameLabel);
         employeePanel.add(nameField);
         employeePanel.add(phoneLabel);
@@ -93,13 +98,13 @@ public class AddFrame extends JFrame {
         employeePanel.add(new JLabel());
         employeePanel.add(addEmployeeButton);
 
-        add(vehiclePanel);
+        add(carPanel);
         add(employeePanel);
 
         DatabaseManager db = new DatabaseManager();
 
         // ----------------- عملیات اضافه کردن ماشین -----------------
-        addVehicleButton.addActionListener(e -> {
+        addCarButton.addActionListener(e -> {
             String name = modelField.getText().trim();
             String plate = cityCode.getText() + " | "
                     + middleThree.getText() + " "
@@ -114,7 +119,7 @@ public class AddFrame extends JFrame {
 
             try {
                 AdminUI adminUI = AdminUI.getInstance();
-                db.addVehicle(name, plate, color, adminUI::loadVehicles);
+                db.addCar(name, plate, color, adminUI::loadCars);
                 JOptionPane.showMessageDialog(null, "ماشین با موفقیت اضافه شد!");
                 modelField.setText("");
                 firstTwo.setText("");
@@ -129,6 +134,7 @@ public class AddFrame extends JFrame {
 
         // ----------------- عملیات اضافه کردن کارمند -----------------
         addEmployeeButton.addActionListener(e -> {
+            int personnelId = Integer.parseInt(personnelIdField.getText().trim());
             String name = nameField.getText().trim();
             String phone = phoneField.getText().trim();
             String telId = telIdField.getText().trim();
@@ -140,8 +146,9 @@ public class AddFrame extends JFrame {
 
             try {
                 AdminUI adminUI = AdminUI.getInstance();
-                db.addEmployee(name, phone, telId, adminUI::loadEmployees);
+                db.addEmployee(personnelId, name, phone, telId, adminUI::loadEmployees);
                 JOptionPane.showMessageDialog(null, "کارمند با موفقیت اضافه شد!");
+                personnelIdField.setText("");
                 nameField.setText("");
                 phoneField.setText("");
                 telIdField.setText("");

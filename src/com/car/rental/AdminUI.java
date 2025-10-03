@@ -5,17 +5,17 @@ import java.awt.*;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 import java.util.Random;
 import java.util.logging.Logger;
-import java.util.Optional;
 
 public class AdminUI {
     private static AdminUI instance;
     private final DatabaseManager db;
-    private JComboBox<String> vehicleCombo;
+    private JComboBox<String> carCombo;
     private JComboBox<String> employeeCombo;
     private JTextField pickupTimeField, destinationField;
-    private JTextField rentalCodeField, returnTimeField;
+    private JTextField confirmCodeField, returnTimeField;
     private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
 
     private AdminUI() {
@@ -69,15 +69,15 @@ public class AdminUI {
 
         // ماشین
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
-        JLabel vehicleLabel = new JLabel("ماشین:");
-        vehicleLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(vehicleLabel, gbc);
+        JLabel carLabel = new JLabel("ماشین:");
+        carLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        pickupPanel.add(carLabel, gbc);
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        vehicleCombo = new JComboBox<>();
-        vehicleCombo.setFont(new Font("Arial", Font.PLAIN, 14));
-        vehicleCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        loadVehicles();
-        pickupPanel.add(vehicleCombo, gbc);
+        carCombo = new JComboBox<>();
+        carCombo.setFont(new Font("Arial", Font.PLAIN, 14));
+        carCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        loadCars();
+        pickupPanel.add(carCombo, gbc);
 
         // کارمند
         gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
@@ -151,14 +151,14 @@ public class AdminUI {
 
         // کد تحویل
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
-        JLabel rentalIdLabel = new JLabel("کد تحویل:");
-        rentalIdLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        returnPanel.add(rentalIdLabel, gbc);
+        JLabel confirmCodeLabel = new JLabel("کد تحویل:");
+        confirmCodeLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        returnPanel.add(confirmCodeLabel, gbc);
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
-        rentalCodeField = new JTextField(15);
-        rentalCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        rentalCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        returnPanel.add(rentalCodeField, gbc);
+        confirmCodeField = new JTextField(15);
+        confirmCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
+        confirmCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        returnPanel.add(confirmCodeField, gbc);
 
         // زمان بازگشت
         gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
@@ -189,7 +189,7 @@ public class AdminUI {
         returnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnButton.addActionListener(e -> {
             returnCar();
-            rentalCodeField.setText("");
+            confirmCodeField.setText("");
             returnTimeField.setText("");
         });
         returnPanel.add(returnButton, gbc);
@@ -226,11 +226,11 @@ public class AdminUI {
         return buttonsPanel;
     }
 
-    public void loadVehicles() {
-        vehicleCombo.removeAllItems();
+    public void loadCars() {
+        carCombo.removeAllItems();
         try {
-            for (String car : db.getVehicles()) {
-                vehicleCombo.addItem(car);
+            for (String car : db.getCars()) {
+                carCombo.addItem(car);
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
@@ -242,7 +242,7 @@ public class AdminUI {
         employeeCombo.removeAllItems();
         try {
             for (String emp : db.getEmployees()) {
-                employeeCombo.addItem(emp.substring(0, emp.indexOf("-")));
+                employeeCombo.addItem(emp.substring(emp.indexOf(" - ") + 2));
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
@@ -250,22 +250,24 @@ public class AdminUI {
         }
     }
 
-    private String generateRentalCode() {
+    private int generateConfirmCode() {
         Random rand = new Random();
-        int num = 10000 + rand.nextInt(90000);
-        return String.valueOf(num);
+        return 10000 + rand.nextInt(90000);
     }
 
     private void pickupCar() {
         try {
-            String rentalCode = generateRentalCode();
+            int confirmCode = generateConfirmCode();
+            while (db.isCCDuplicated(confirmCode)) {
+                confirmCode = generateConfirmCode();
+                // اگر کد تایید تکراری بود، کد جدید تولید میشه
+            }
 
-            String selectedEmpName = (String) employeeCombo.getSelectedItem();
-            String empPhone = db.getEmployeePhoneByName(selectedEmpName);
+            String[] selectedEmp = ((String) Objects.requireNonNull(employeeCombo.getSelectedItem())).split(" - ");
+            String empPhone = selectedEmp[1];
 
-            String selectedCar = (String) vehicleCombo.getSelectedItem();
-            String carPlate = Optional.ofNullable(selectedCar)
-                    .map(s -> s.substring(s.lastIndexOf('-') + 2)).orElse("Unknown");
+            String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
+            String carPlate = selectedCar[2];
 
             String pickupTime = pickupTimeField.getText();
             String destination = destinationField.getText();
@@ -275,9 +277,9 @@ public class AdminUI {
                 return;
             }
 
-            db.insertRental(rentalCode, empPhone, carPlate, pickupTime, destination);
+            db.insertRental(empPhone, carPlate, pickupTime, destination, confirmCode);
 
-            JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + rentalCode);
+            JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + confirmCode);
 
             pickupTimeField.setText("");
             destinationField.setText("");
@@ -289,15 +291,15 @@ public class AdminUI {
 
     private void returnCar() {
         String returnTime = returnTimeField.getText();
-        String rentalCode = rentalCodeField.getText();
+        int confirmCode = Integer.parseInt(confirmCodeField.getText());
 
-        if (returnTime.isEmpty() || rentalCode.isEmpty()) {
+        if (returnTime.isEmpty() || confirmCodeField.getText().isEmpty()) {
             JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
             return;
         }
 
         try {
-            boolean success = db.returnCar(rentalCode, returnTime);
+            boolean success = db.returnCar(confirmCode, returnTime);
             if (success) {
                 JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
             } else {
@@ -305,7 +307,7 @@ public class AdminUI {
             }
 
             returnTimeField.setText("");
-            rentalCodeField.setText("");
+            confirmCodeField.setText("");
 
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());

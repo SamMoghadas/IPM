@@ -1,61 +1,83 @@
 package com.car.rental;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
-import java.sql.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.sql.SQLException;
+import java.util.List;
 
 public class ReportFrame extends JFrame {
-    private static final Logger logger = Logger.getLogger(ReportFrame.class.getName());
 
     public ReportFrame() {
         setTitle("گزارش سفرهای ماشین");
-        setSize(700, 400);
+        setSize(900, 400);
         setLayout(new BorderLayout(10, 10));
-        setVisible(true);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
-        JTextArea reportArea = new JTextArea();
-        reportArea.setEditable(false);
-        reportArea.setFont(new Font("Arial", Font.PLAIN, 12));
-        JScrollPane scrollPane = new JScrollPane(reportArea);
-        add(scrollPane);
+        DatabaseManager db = new DatabaseManager();
+        try {
+            List<RentalRecord> rentalRecords = db.getRentalReport();
 
-        // اتصال به دیتابیس و گرفتن گزارش
-        String sql = "SELECT r.rental_code, e.name AS employee_name, c.name AS car_name, c.plate, " +
-                "r.delivery_date, r.return_date, r.destination " +
-                "FROM CarRental r JOIN Employee e ON r.employee_phone = e.phone " +
-                "LEFT JOIN Car c ON r.car_plate = c.plate";
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+            // ستون‌های جدول
+            String[] columns = {"شماره پرسنلی", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"};
+            Object[][] data = new Object[rentalRecords.size()][columns.length];
 
-            StringBuilder reportText = new StringBuilder();
-
-            while (rs.next()) {
-                String employeeName = rs.getString("employee_name");
-                String carName = rs.getString("car_name");
-                String delivery = rs.getString("delivery_date");
-                String returnDate = rs.getString("return_date");
-                String destination = rs.getString("destination");
-
-                reportText.append(employeeName)
-                        .append(" | ")
-                        .append(carName)
-                        .append(" | ")
-                        .append(delivery)
-                        .append(" | ")
-                        .append(returnDate == null ? "منتظر بازگشت" : returnDate)
-                        .append(" | ")
-                        .append(destination)
-                        .append("\n"); // هر رکورد رو توی خط جدا قرار میده
+            for (int i = 0; i < rentalRecords.size(); i++) {
+                RentalRecord r = rentalRecords.get(i);
+                data[i][0] = r.personnelId;
+                data[i][1] = r.employeeName;
+                data[i][2] = r.carName;
+                data[i][3] = r.carColor;
+                data[i][4] = r.plate;
+                data[i][5] = r.pickupDate;
+                data[i][6] = r.returnDate;
+                data[i][7] = r.destination;
             }
-            reportArea.setText(reportText.toString());
+
+            JTable table = new JTable(data, columns);
+            table.setAutoCreateRowSorter(true); // قابلیت مرتب سازی
+            table.setFont(new Font("Arial", Font.PLAIN, 12));
+            table.setRowHeight(24);
+            DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
+            centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+
+            for (int i = 0; i < table.getColumnCount(); i++) {
+                table.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
+            }
+
+
+            JScrollPane scrollPane = new JScrollPane(table);
+            add(scrollPane, BorderLayout.CENTER);
 
         } catch (SQLException e) {
-            logger.log(Level.SEVERE, "Database connection failed!", e.getMessage());
+            JOptionPane.showMessageDialog(this, "خطا در دریافت گزارش: " + e.getMessage());
+        }
+
+        setVisible(true);
+    }
+
+    // ----------------- کلاس داخلی رکورد -----------------
+    public static class RentalRecord {
+        int personnelId;
+        String employeeName;
+        String carName;
+        String carColor;
+        String plate;
+        String pickupDate;
+        String returnDate;
+        String destination;
+
+        public RentalRecord(int personnelId, String employeeName, String carName, String carColor,
+                            String plate, String pickupDate, String returnDate, String destination) {
+            this.personnelId = personnelId;
+            this.employeeName = employeeName;
+            this.carName = carName;
+            this.carColor = carColor;
+            this.plate = plate;
+            this.pickupDate = pickupDate;
+            this.returnDate = returnDate == null ? "منتظر بازگشت" : returnDate;
+            this.destination = destination;
         }
     }
 }
