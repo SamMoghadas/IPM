@@ -39,7 +39,7 @@ public class DatabaseManager {
                 "pickup_date TEXT, " +
                 "return_date TEXT, " +
                 "destination TEXT NOT NULL, " +
-                "PRIMARY KEY (confirm_code)" +
+                "PRIMARY KEY (confirm_code), " +
                 "FOREIGN KEY(employee_id) REFERENCES EmployeeTable(personnel_id) ON UPDATE CASCADE, " +
                 "FOREIGN KEY(car_id) REFERENCES CarTable(id) ON UPDATE CASCADE" +
                 ")";
