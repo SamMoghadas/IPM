@@ -2,6 +2,8 @@ package com.car.rental;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.sql.SQLException;
 import java.util.List;
@@ -35,17 +37,29 @@ public class ReportFrame extends JFrame {
                 data[i][7] = r.destination;
             }
 
-            JTable table = new JTable(data, columns);
-            table.setAutoCreateRowSorter(true); // قابلیت مرتب سازی
+            // مدل جدول فقط خواندنی
+            DefaultTableModel model = new DefaultTableModel(data, columns) {
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false; // همه سلول‌ها غیرقابل ویرایش
+                }
+            };
+
+            JTable table = new JTable(model);
             table.setFont(new Font("Arial", Font.PLAIN, 12));
             table.setRowHeight(24);
+
+            // وسط‌چین کردن سلول‌ها
             DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
             centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-
             for (int i = 0; i < table.getColumnCount(); i++) {
                 table.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
             }
 
+            // مرتب‌سازی پیش‌فرض بر اساس ستون تاریخ تحویل (ستون 5) نزولی
+            TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(model);
+            table.setRowSorter(sorter);
+            sorter.setSortKeys(List.of(new RowSorter.SortKey(5, SortOrder.DESCENDING)));
 
             JScrollPane scrollPane = new JScrollPane(table);
             add(scrollPane, BorderLayout.CENTER);
@@ -55,29 +69,5 @@ public class ReportFrame extends JFrame {
         }
 
         setVisible(true);
-    }
-
-    // ----------------- کلاس داخلی رکورد -----------------
-    public static class RentalRecord {
-        int personnelId;
-        String employeeName;
-        String carName;
-        String carColor;
-        String plate;
-        String pickupDate;
-        String returnDate;
-        String destination;
-
-        public RentalRecord(int personnelId, String employeeName, String carName, String carColor,
-                            String plate, String pickupDate, String returnDate, String destination) {
-            this.personnelId = personnelId;
-            this.employeeName = employeeName;
-            this.carName = carName;
-            this.carColor = carColor;
-            this.plate = plate;
-            this.pickupDate = pickupDate;
-            this.returnDate = returnDate == null ? "منتظر بازگشت" : returnDate;
-            this.destination = destination;
-        }
     }
 }

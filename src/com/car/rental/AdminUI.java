@@ -291,19 +291,36 @@ public class AdminUI {
 
     private void returnCar() {
         String returnTime = returnTimeField.getText();
-        int confirmCode = Integer.parseInt(confirmCodeField.getText());
+        String confirmCodeText = confirmCodeField.getText();
 
-        if (returnTime.isEmpty() || confirmCodeField.getText().isEmpty()) {
+        if (returnTime.isEmpty() || confirmCodeText.isEmpty()) {
             JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
             return;
         }
 
+        int confirmCode;
         try {
+            confirmCode = Integer.parseInt(confirmCodeText);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(null, "کد تحویل معتبر نیست!");
+            return;
+        }
+
+        try {
+            // گرفتن اطلاعات رکورد قبل از ثبت بازگشت
+            RentalRecord record = db.getRentalRecord(confirmCode); // باید این متد رو توی DatabaseManager داشته باشی
+            if (record == null) {
+                JOptionPane.showMessageDialog(null, "کد تحویل وجود ندارد!");
+                return;
+            }
+
             boolean success = db.returnCar(confirmCode, returnTime);
             if (success) {
-                JOptionPane.showMessageDialog(null, "ماشین بازگشت داده شد ✅");
+                JOptionPane.showMessageDialog(null,
+                        "ماشین '" + record.carName + "' توسط کارمند '" + record.employeeName + "' برگشت داده شد ✅"
+                );
             } else {
-                JOptionPane.showMessageDialog(null, "کد تحویل وجود ندارد یا قبلاً بازگشت ثبت شده است!");
+                JOptionPane.showMessageDialog(null, "قبلاً بازگشت ثبت شده است!");
             }
 
             returnTimeField.setText("");
@@ -313,6 +330,7 @@ public class AdminUI {
             JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
         }
     }
+
 
     private static String getDate() {
         LocalDateTime now = LocalDateTime.now();

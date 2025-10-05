@@ -225,8 +225,8 @@ public class DatabaseManager {
         }
     }
 
-    public List<ReportFrame.RentalRecord> getRentalReport() throws SQLException {
-        List<ReportFrame.RentalRecord> records = new ArrayList<>();
+    public List<RentalRecord> getRentalReport() throws SQLException {
+        List<RentalRecord> records = new ArrayList<>();
         String sql = "SELECT e.personnel_id, e.name AS employee_name, " +
                 "c.name AS car_name, c.color AS car_color, c.plate, " +
                 "r.pickup_date, r.return_date, r.destination " +
@@ -240,7 +240,7 @@ public class DatabaseManager {
              ResultSet rs = stmt.executeQuery(sql)) {
 
             while (rs.next()) {
-                records.add(new ReportFrame.RentalRecord(
+                records.add(new RentalRecord(
                         rs.getInt("personnel_id"),
                         rs.getString("employee_name"),
                         rs.getString("car_name"),
@@ -265,6 +265,28 @@ public class DatabaseManager {
             ResultSet rs = stmt.executeQuery();
 
             return rs.next();
+        }
+    }
+
+    public RentalRecord getRentalRecord(int confirmCode) throws SQLException {
+        String query = "SELECT r.confirm_code, e.name AS employeeName, c.name AS carName " +
+                "FROM RentalTable r " +
+                "JOIN EmployeeTable e ON r.employee_id = e.personnel_id " +
+                "JOIN CarTable c ON r.car_id = c.id " +
+                "WHERE r.confirm_code = ?";
+        try (Connection conn = getConnection(); PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, confirmCode);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return new RentalRecord(
+                        rs.getInt("confirm_code"),
+                        rs.getString("employeeName"),
+                        rs.getString("carName"),
+                        "", "", "", "", "" // باقی فیلدها لازم نیست
+                );
+            } else {
+                return null;
+            }
         }
     }
 }
