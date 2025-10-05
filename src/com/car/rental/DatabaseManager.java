@@ -279,7 +279,7 @@ public class DatabaseManager {
             ResultSet rs = ps.executeQuery();
             if (rs.next()) {
                 return new RentalRecord(
-                        rs.getInt("confirm_code"),
+                        0,
                         rs.getString("employeeName"),
                         rs.getString("carName"),
                         "", "", "", "", "" // باقی فیلدها لازم نیست
