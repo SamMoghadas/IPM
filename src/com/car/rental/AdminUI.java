@@ -66,6 +66,7 @@ public class AdminUI {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 15, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
+        DefaultListCellRenderer renderer = new DefaultListCellRenderer();
 
         // ماشین
         gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
@@ -76,6 +77,7 @@ public class AdminUI {
         carCombo = new JComboBox<>();
         carCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         carCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        carCombo.setRenderer(renderer);
         loadCars();
         pickupPanel.add(carCombo, gbc);
 
@@ -88,6 +90,7 @@ public class AdminUI {
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        employeeCombo.setRenderer(renderer);
         loadEmployees();
         pickupPanel.add(employeeCombo, gbc);
 
@@ -229,7 +232,7 @@ public class AdminUI {
     public void loadCars() {
         carCombo.removeAllItems();
         try {
-            for (String car : db.getCars()) {
+            for (String car : db.getAvailableCars()) {
                 carCombo.addItem(car);
             }
         } catch (SQLException e) {
@@ -241,7 +244,7 @@ public class AdminUI {
     public void loadEmployees() {
         employeeCombo.removeAllItems();
         try {
-            for (String emp : db.getEmployees()) {
+            for (String emp : db.getAvailableEmployees()) {
                 employeeCombo.addItem(emp.substring(emp.indexOf(" - ") + 2));
             }
         } catch (SQLException e) {
@@ -280,6 +283,8 @@ public class AdminUI {
             db.insertRental(empPhone, carPlate, pickupTime, destination, confirmCode);
 
             JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + confirmCode);
+            loadEmployees();
+            loadCars();
 
             pickupTimeField.setText("");
             destinationField.setText("");
@@ -319,6 +324,8 @@ public class AdminUI {
                 JOptionPane.showMessageDialog(null,
                         "ماشین '" + record.carName + "' توسط کارمند '" + record.employeeName + "' برگشت داده شد ✅"
                 );
+                loadEmployees();
+                loadCars();
             } else {
                 JOptionPane.showMessageDialog(null, "قبلاً بازگشت ثبت شده است!");
             }

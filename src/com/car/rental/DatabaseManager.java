@@ -8,9 +8,13 @@ import java.util.logging.Logger;
 
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
+    private static Connection connection;
+
     private Connection getConnection() throws SQLException {
-        String url = "jdbc:sqlite:IPMCarRental.db";
-        return DriverManager.getConnection(url);
+        if (connection == null || connection.isClosed()) {
+            connection = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
+        }
+        return connection;
     }
 
     // --- ایجاد جدول‌ها ---
@@ -21,6 +25,7 @@ public class DatabaseManager {
                 "phone TEXT NOT NULL, " +
                 "telegram_id TEXT, " +
                 "is_deleted INTEGER DEFAULT 0, " +
+                "is_renting INTEGER DEFAULT 0, " +
                 "PRIMARY KEY (personnel_id)" +
                 ")";
 
@@ -29,7 +34,8 @@ public class DatabaseManager {
                 "name TEXT NOT NULL, " +
                 "plate TEXT NOT NULL, " +
                 "color TEXT NOT NULL, " +
-                "is_deleted INTEGER DEFAULT 0" +
+                "is_deleted INTEGER DEFAULT 0, " +
+                "is_rented INTEGER DEFAULT 0" +
                 ")";
 
         String rentalTable = "CREATE TABLE IF NOT EXISTS RentalTable( " +
@@ -39,6 +45,7 @@ public class DatabaseManager {
                 "pickup_date TEXT, " +
                 "return_date TEXT, " +
                 "destination TEXT NOT NULL, " +
+                "is_active INTEGER DEFAULT 1, " +
                 "PRIMARY KEY (confirm_code), " +
                 "FOREIGN KEY(employee_id) REFERENCES EmployeeTable(personnel_id) ON UPDATE CASCADE, " +
                 "FOREIGN KEY(car_id) REFERENCES CarTable(id) ON UPDATE CASCADE" +
@@ -49,7 +56,7 @@ public class DatabaseManager {
             stmt.execute(carTable);
             stmt.execute(rentalTable);
         } catch (SQLException e) {
-            logger.log(Level.SEVERE, "Database connection failed!", e.getMessage());
+            logger.log(Level.SEVERE, "Database connection failed!", e);
         }
     }
 
@@ -89,61 +96,126 @@ public class DatabaseManager {
                              String pickupTime,
                              String destination,
                              int confirmCode) throws SQLException {
-        String sql = "INSERT INTO RentalTable(employee_id, car_id, pickup_date, destination, confirm_code) " +
+        String insertSql = "INSERT INTO RentalTable(employee_id, car_id, pickup_date, destination, confirm_code) " +
                 "VALUES (?, ?, ?, ?, ?)";
+        String updateCarSql = "UPDATE CarTable SET is_rented = 1 WHERE id = ?";
+        String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 1 WHERE personnel_id = ?";
 
         int employeeId = getPersonnelIdByPhone(empPhone);
         int carId = getCarIdByPlate(carPlate);
 
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
 
-            stmt.setInt(1, employeeId);
-            stmt.setInt(2, carId);
-            stmt.setString(3, pickupTime);
-            stmt.setString(4, destination);
-            stmt.setInt(5, confirmCode);
+            // --- ثبت اجاره و تغییر وضعیت ماشین ---
+            try (PreparedStatement insertStmt = conn.prepareStatement(insertSql);
+                 PreparedStatement updateStmt = conn.prepareStatement(updateCarSql);
+                 PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
 
-            stmt.executeUpdate();
+                insertStmt.setInt(1, employeeId);
+                insertStmt.setInt(2, carId);
+                insertStmt.setString(3, pickupTime);
+                insertStmt.setString(4, destination);
+                insertStmt.setInt(5, confirmCode);
+                insertStmt.executeUpdate();
+
+                updateStmt.setInt(1, carId);
+                updateStmt.executeUpdate();
+
+                updateEmpStmt.setInt(1, employeeId);
+                updateEmpStmt.executeUpdate();
+
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
         }
     }
 
     // --- ثبت برگشت ماشین ---
     public boolean returnCar(int confirmCode, String returnDate) throws SQLException {
-        String checkSql = "SELECT confirm_code, return_date FROM RentalTable WHERE confirm_code = ? AND return_date IS NULL";
+        String selectSql = "SELECT car_id, employee_id FROM RentalTable WHERE confirm_code = ? AND return_date IS NULL";
+        String updateRentalSql = "UPDATE RentalTable SET return_date = ?, is_active = 0 WHERE confirm_code = ?";
+        String updateCarSql = "UPDATE CarTable SET is_rented = 0 WHERE id = ?";
+        String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 0 WHERE personnel_id = ?";
 
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
 
-            stmt.setInt(1, confirmCode);
-            ResultSet rs = stmt.executeQuery();
+            try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+                selectStmt.setInt(1, confirmCode);
+                try (ResultSet rs = selectStmt.executeQuery()) {
+                    if (!rs.next()) {
+                        conn.rollback();
+                        return false; // اجاره‌ای وجود نداره یا قبلاً برگشته
+                    }
 
-            if (rs.next()) {
-                String updateSql = "UPDATE RentalTable SET return_date = ? WHERE confirm_code = ?";
-                try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
-                    updateStmt.setString(1, returnDate);
-                    updateStmt.setInt(2, confirmCode);
-                    updateStmt.executeUpdate();
-                    return true; // یعنی ماشین با موفقیت برگشت
+                    int carId = rs.getInt("car_id");
+                    int empId = rs.getInt("employee_id");
+
+                    try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
+                         PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
+                         PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
+
+                        updateRentalStmt.setString(1, returnDate);
+                        updateRentalStmt.setInt(2, confirmCode);
+                        updateRentalStmt.executeUpdate();
+
+                        updateCarStmt.setInt(1, carId);
+                        updateCarStmt.executeUpdate();
+
+                        updateEmpStmt.setInt(1, empId);
+                        updateEmpStmt.executeUpdate();
+
+                        conn.commit();
+                        return true;
+                    } catch (SQLException e) {
+                        conn.rollback();
+                        throw e;
+                    } finally {
+                        conn.setAutoCommit(true);
+                    }
                 }
-            } else {
-                return false; // یعنی کد تحویل معتبر نیست یا قبلاً برگشته
             }
         }
     }
 
-    // --- لیست ماشین ها ---
-    public List<String> getCars() throws SQLException {
+    // --- لیست ماشین ها های در دسترس ---
+    public List<String> getAvailableCars() throws SQLException {
         List<String> cars = new ArrayList<>();
-        String sql = "SELECT name, color, plate FROM CarTable WHERE is_deleted = 0";
+        String sql = "SELECT name, color, plate FROM CarTable WHERE is_deleted = 0 AND is_rented = 0";
 
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
 
             while (rs.next()) {
-                String car = rs.getString("name") + " - " + rs.getString("color") +
-                        " - " + rs.getString("plate");
+                String car = rs.getString("name") + " - " +
+                        rs.getString("color") + " - " +
+                        rs.getString("plate");
+                cars.add(car);
+            }
+        }
+        return cars;
+    }
+
+    // --- لیست همه ماشین ها ---
+    public List<String> getAllCars() throws SQLException {
+        List<String> cars = new ArrayList<>();
+        String sql = "SELECT name, color, plate, is_rented FROM CarTable WHERE is_deleted = 0";
+
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                String car = rs.getString("name") + " - " +
+                        rs.getString("color") + " - " +
+                        rs.getString("plate") + " - " +
+                        rs.getString("is_rented");
                 cars.add(car);
             }
         }
@@ -151,9 +223,9 @@ public class DatabaseManager {
     }
 
     // --- لیست کارمند ها ---
-    public List<String> getEmployees() throws SQLException {
+    public List<String> getAvailableEmployees() throws SQLException {
         List<String> employees = new ArrayList<>();
-        String sql = "SELECT personnel_id, name, phone, telegram_id FROM EmployeeTable WHERE is_deleted = 0";
+        String sql = "SELECT personnel_id, name, phone, telegram_id FROM EmployeeTable WHERE is_deleted = 0 AND is_renting = 0";
 
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
@@ -164,6 +236,25 @@ public class DatabaseManager {
                         rs.getString("name") + " - " +
                         rs.getString("phone") + " - " +
                         rs.getString("telegram_id"));
+            }
+        }
+        return employees;
+    }
+
+    public List<String> getAllEmployees() throws SQLException {
+        List<String> employees = new ArrayList<>();
+        String sql = "SELECT personnel_id, name, phone, telegram_id, is_renting FROM EmployeeTable WHERE is_deleted = 0";
+
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                employees.add(rs.getInt("personnel_id") + " - " +
+                        rs.getString("name") + " - " +
+                        rs.getString("phone") + " - " +
+                        rs.getString("telegram_id") + " - " +
+                        rs.getString("is_renting"));
             }
         }
         return employees;
@@ -255,7 +346,7 @@ public class DatabaseManager {
         return records;
     }
 
-    public boolean isCCDuplicated(int confirmCode) throws SQLException  {
+    public boolean isCCDuplicated(int confirmCode) throws SQLException {
         String sql = "SELECT confirm_code FROM RentalTable where confirm_code = ?";
 
         try (Connection conn = getConnection();
