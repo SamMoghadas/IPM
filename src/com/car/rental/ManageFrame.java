@@ -28,6 +28,21 @@ public class ManageFrame extends JFrame {
         setSize(700, 500);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
+        getContentPane().setBackground(Color.WHITE);
+
+        // ----------------- پنل بالایی با دکمه بازگشت -----------------
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        topPanel.setBackground(Color.WHITE);
+        JButton backButton = new JButton("برگشت به صفحه اصلی");
+        backButton.setBackground(new Color(156, 163, 175));
+        backButton.setFocusPainted(false);
+        backButton.setBackground(new Color(230, 230, 230));
+        backButton.addActionListener(e -> {
+            dispose();
+            new AdminUI();
+        });
+        topPanel.add(backButton);
+        add(topPanel, BorderLayout.NORTH);
 
         tabbedPane = new JTabbedPane();
         tabbedPane.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -48,13 +63,20 @@ public class ManageFrame extends JFrame {
         centerColumns(carTable);
 
         JScrollPane carScroll = new JScrollPane(carTable);
+        carScroll.getViewport().setBackground(Color.WHITE);
 
         JPanel carPanel = new JPanel(new BorderLayout(10, 10));
         carPanel.add(carScroll, BorderLayout.CENTER);
+        carPanel.setBackground(Color.WHITE);
 
         JPanel carButtons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+        carButtons.setBackground(Color.WHITE);
         JButton editCarButton = new JButton("ویرایش");
+        editCarButton.setBackground(new Color(0, 120, 215));
+        editCarButton.setForeground(Color.WHITE);
         JButton deleteCarButton = new JButton("حذف");
+        deleteCarButton.setBackground(new Color(165, 42, 42));
+        deleteCarButton.setForeground(Color.WHITE);
         carButtons.add(editCarButton);
         carButtons.add(deleteCarButton);
         carPanel.add(carButtons, BorderLayout.SOUTH);
@@ -78,13 +100,20 @@ public class ManageFrame extends JFrame {
         centerColumns(employeeTable);
 
         JScrollPane empScroll = new JScrollPane(employeeTable);
+        empScroll.getViewport().setBackground(Color.WHITE);
 
         JPanel empPanel = new JPanel(new BorderLayout(10, 10));
         empPanel.add(empScroll, BorderLayout.CENTER);
+        empPanel.setBackground(Color.WHITE);
 
         JPanel empButtons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+        empButtons.setBackground(Color.WHITE);
         JButton editEmpButton = new JButton("ویرایش");
+        editEmpButton.setBackground(new Color(0, 120, 215));
+        editEmpButton.setForeground(Color.WHITE);
         JButton deleteEmpButton = new JButton("حذف");
+        deleteEmpButton.setBackground(new Color(165, 42, 42));
+        deleteEmpButton.setForeground(Color.WHITE);
         empButtons.add(editEmpButton);
         empButtons.add(deleteEmpButton);
         empPanel.add(empButtons, BorderLayout.SOUTH);

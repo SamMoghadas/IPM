@@ -263,8 +263,7 @@ public class DatabaseManager {
     // --- افزودن ماشین ---
     public void addCar(String name,
                        String plate,
-                       String color,
-                       DataChangeCallback callback) throws SQLException {
+                       String color) throws SQLException {
         String sql = "INSERT INTO CarTable(name, plate, color) VALUES(?,?,?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -272,7 +271,6 @@ public class DatabaseManager {
             stmt.setString(2, plate);
             stmt.setString(3, color);
             stmt.executeUpdate();
-            callback.onDataChange();
         }
     }
 
@@ -280,8 +278,7 @@ public class DatabaseManager {
     public void addEmployee(int personnelId,
                             String name,
                             String phone,
-                            String telegramId,
-                            DataChangeCallback callback) throws SQLException {
+                            String telegramId) throws SQLException {
         String sql = "INSERT INTO EmployeeTable(personnel_id, name, phone, telegram_id) VALUES(?,?,?,?)";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -290,7 +287,6 @@ public class DatabaseManager {
             stmt.setString(3, phone);
             stmt.setString(4, telegramId);
             stmt.executeUpdate();
-            callback.onDataChange();
         }
     }
 

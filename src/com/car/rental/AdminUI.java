@@ -9,8 +9,7 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.logging.Logger;
 
-public class AdminUI {
-    private static AdminUI instance;
+public class AdminUI extends JFrame {
     private final DatabaseManager db;
     private JComboBox<String> carCombo;
     private JComboBox<String> employeeCombo;
@@ -18,26 +17,20 @@ public class AdminUI {
     private JTextField confirmCodeField, returnTimeField;
     private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
 
-    private AdminUI() {
+    public AdminUI() {
         db = new DatabaseManager();
         db.initDatabase();
         createMainUI();
     }
 
-    public static AdminUI getInstance() {
-        if (instance == null) {
-            instance = new AdminUI();
-        }
-        return instance;
-    }
-
     private void createMainUI() {
-        JFrame frame = new JFrame("سیستم مدیریت ماشین شرکت");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(600, 500);
-        frame.setLayout(new BorderLayout(10, 10));
-        frame.getContentPane().setBackground(new Color(245, 245, 250));
-        frame.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        setTitle("سیستم مدیریت ماشین شرکت");
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setSize(600, 500);
+        setLayout(new BorderLayout(10, 10));
+        getContentPane().setBackground(new Color(245, 245, 250));
+        applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        getContentPane().setBackground(Color.WHITE);
 
         // پنل‌های جدا
         JPanel pickupPanel = createPickupPanel();
@@ -47,14 +40,15 @@ public class AdminUI {
         // چیدمان اصلی
         JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
         mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        mainPanel.setBackground(Color.WHITE);
         mainPanel.add(pickupPanel);
         mainPanel.add(returnPanel);
 
-        frame.add(mainPanel, BorderLayout.CENTER);
-        frame.add(buttonsPanel, BorderLayout.SOUTH);
+        add(mainPanel, BorderLayout.CENTER);
+        add(buttonsPanel, BorderLayout.SOUTH);
 
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
+        setLocationRelativeTo(null);
+        setVisible(true);
     }
 
     private JPanel createPickupPanel() {
@@ -69,11 +63,14 @@ public class AdminUI {
         DefaultListCellRenderer renderer = new DefaultListCellRenderer();
 
         // ماشین
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel carLabel = new JLabel("ماشین:");
         carLabel.setFont(new Font("Arial", Font.BOLD, 14));
         pickupPanel.add(carLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         carCombo = new JComboBox<>();
         carCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         carCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -82,11 +79,14 @@ public class AdminUI {
         pickupPanel.add(carCombo, gbc);
 
         // کارمند
-        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel employeeLabel = new JLabel("کارمند:");
         employeeLabel.setFont(new Font("Arial", Font.BOLD, 14));
         pickupPanel.add(employeeLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         employeeCombo = new JComboBox<>();
         employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -95,11 +95,14 @@ public class AdminUI {
         pickupPanel.add(employeeCombo, gbc);
 
         // زمان تحویل
-        gbc.gridx = 0; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
         pickupTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
         pickupPanel.add(pickupTimeLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         JPanel pickupTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         pickupTimePanel.setBackground(Color.WHITE);
         pickupTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -115,18 +118,23 @@ public class AdminUI {
         pickupPanel.add(pickupTimePanel, gbc);
 
         // مقصد
-        gbc.gridx = 0; gbc.gridy = 3; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel destinationLabel = new JLabel("مقصد:");
         destinationLabel.setFont(new Font("Arial", Font.BOLD, 14));
         pickupPanel.add(destinationLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         destinationField = new JTextField(15);
         destinationField.setFont(new Font("Arial", Font.PLAIN, 14));
         destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupPanel.add(destinationField, gbc);
 
         // دکمه ثبت تحویل
-        gbc.gridx = 1; gbc.gridy = 4; gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 1;
+        gbc.gridy = 4;
+        gbc.anchor = GridBagConstraints.CENTER;
         JButton pickupButton = new JButton("ثبت تحویل");
         pickupButton.setFont(new Font("Arial", Font.BOLD, 14));
         pickupButton.setBackground(new Color(0, 120, 215));
@@ -153,22 +161,28 @@ public class AdminUI {
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // کد تحویل
-        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel confirmCodeLabel = new JLabel("کد تحویل:");
         confirmCodeLabel.setFont(new Font("Arial", Font.BOLD, 14));
         returnPanel.add(confirmCodeLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         confirmCodeField = new JTextField(15);
         confirmCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
         confirmCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnPanel.add(confirmCodeField, gbc);
 
         // زمان بازگشت
-        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.anchor = GridBagConstraints.EAST;
         JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
         returnTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
         returnPanel.add(returnTimeLabel, gbc);
-        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
         JPanel returnTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         returnTimePanel.setBackground(Color.WHITE);
         returnTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
@@ -184,7 +198,9 @@ public class AdminUI {
         returnPanel.add(returnTimePanel, gbc);
 
         // دکمه ثبت بازگشت
-        gbc.gridx = 1; gbc.gridy = 2; gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 1;
+        gbc.gridy = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
         JButton returnButton = new JButton("ثبت بازگشت");
         returnButton.setFont(new Font("Arial", Font.BOLD, 14));
         returnButton.setBackground(new Color(0, 120, 215));
@@ -203,24 +219,34 @@ public class AdminUI {
     private JPanel createButtonsPanel() {
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
         buttonsPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        buttonsPanel.setBackground(Color.WHITE);
 
         JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
         addItemsButton.setFont(new Font("Arial", Font.BOLD, 14));
         addItemsButton.setBackground(new Color(34, 139, 34));
         addItemsButton.setForeground(Color.WHITE);
-        addItemsButton.addActionListener(e -> new AddFrame());
+        addItemsButton.addActionListener(e -> {
+            dispose();
+            new AddFrame();
+        });
+
+        JButton manageButton = new JButton("مدیریت ماشین‌ها و کارمندها");
+        manageButton.setFont(new Font("Arial", Font.BOLD, 14));
+        manageButton.setBackground(new Color(55, 65, 81));
+        manageButton.setForeground(Color.WHITE);
+        manageButton.addActionListener(e -> {
+            dispose();
+            new ManageFrame();
+        });
 
         JButton reportButton = new JButton("نمایش گزارش");
         reportButton.setFont(new Font("Arial", Font.BOLD, 14));
         reportButton.setBackground(new Color(139, 69, 19));
         reportButton.setForeground(Color.WHITE);
-        reportButton.addActionListener(e -> new ReportFrame());
-
-        JButton manageButton = new JButton("مدیریت ماشین‌ها و کارمندها");
-        manageButton.setFont(new Font("Arial", Font.BOLD, 14));
-        manageButton.setBackground(new Color(165, 42, 42));
-        manageButton.setForeground(Color.WHITE);
-        manageButton.addActionListener(e -> new ManageFrame());
+        reportButton.addActionListener(e -> {
+            dispose();
+            new ReportFrame();
+        });
 
         buttonsPanel.add(reportButton);
         buttonsPanel.add(manageButton);

@@ -16,6 +16,21 @@ public class ReportFrame extends JFrame {
         setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        getContentPane().setBackground(Color.WHITE);
+
+        // ----------------- پنل بالایی با دکمه بازگشت -----------------
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        topPanel.setBackground(Color.WHITE);
+        JButton backButton = new JButton("برگشت به صفحه اصلی");
+        backButton.setBackground(new Color(156, 163, 175));
+        backButton.setFocusPainted(false);
+        backButton.setBackground(new Color(230, 230, 230));
+        backButton.addActionListener(e -> {
+            dispose();
+            new AdminUI();
+        });
+        topPanel.add(backButton);
+        add(topPanel, BorderLayout.NORTH);
 
         DatabaseManager db = new DatabaseManager();
         try {
@@ -62,6 +77,7 @@ public class ReportFrame extends JFrame {
             sorter.setSortKeys(List.of(new RowSorter.SortKey(5, SortOrder.DESCENDING)));
 
             JScrollPane scrollPane = new JScrollPane(table);
+            scrollPane.getViewport().setBackground(Color.WHITE);
             add(scrollPane, BorderLayout.CENTER);
 
         } catch (SQLException e) {
