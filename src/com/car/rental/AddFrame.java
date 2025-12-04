@@ -19,7 +19,6 @@ public class AddFrame extends JFrame {
         JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         topPanel.setBackground(Color.WHITE);
         JButton backButton = new JButton("برگشت به صفحه اصلی");
-        backButton.setBackground(new Color(156, 163, 175));
         backButton.setFocusPainted(false);
         backButton.setBackground(new Color(230, 230, 230));
         backButton.addActionListener(e -> {
@@ -49,6 +48,7 @@ public class AddFrame extends JFrame {
         // حرف
         String[] letters = {"الف", "ب", "ج", "د", "س", "ص", "ط", "ق", "گ", "ل", "م", "ن", "و", "هـ", "ی"};
         JComboBox<String> letterCombo = new JComboBox<>(letters);
+        letterCombo.setBackground(Color.WHITE);
 
         // ۳ رقم وسط
         JTextField middleThree = new JTextField(3);
@@ -69,7 +69,7 @@ public class AddFrame extends JFrame {
         colorField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         JButton addCarButton = new JButton("اضافه کردن ماشین");
-        addCarButton.setBackground(new Color(16, 185, 129));
+        addCarButton.setBackground(new Color(34, 139, 34));
         addCarButton.setForeground(Color.WHITE);
 
         carPanel.add(modelLabel);
@@ -100,7 +100,7 @@ public class AddFrame extends JFrame {
         JTextField telIdField = new JTextField(20);
 
         JButton addEmployeeButton = new JButton("اضافه کردن کارمند");
-        addEmployeeButton.setBackground(new Color(16, 185, 129));
+        addEmployeeButton.setBackground(new Color(34, 139, 34));
         addEmployeeButton.setForeground(Color.WHITE);
 
         employeePanel.add(personnelIdLabel);
@@ -127,7 +127,7 @@ public class AddFrame extends JFrame {
         // ----------------- عملیات اضافه کردن ماشین -----------------
         addCarButton.addActionListener(e -> {
             String name = modelField.getText().trim();
-            String plate = cityCode.getText() + " | " + middleThree.getText() + " "
+            String plate = cityCode.getText() + " ایران " + middleThree.getText() + " "
                     + letterCombo.getSelectedItem() + " " + firstTwo.getText();
             String color = colorField.getText().trim();
 

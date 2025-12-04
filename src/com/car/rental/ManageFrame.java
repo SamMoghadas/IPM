@@ -34,7 +34,6 @@ public class ManageFrame extends JFrame {
         JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         topPanel.setBackground(Color.WHITE);
         JButton backButton = new JButton("برگشت به صفحه اصلی");
-        backButton.setBackground(new Color(156, 163, 175));
         backButton.setFocusPainted(false);
         backButton.setBackground(new Color(230, 230, 230));
         backButton.addActionListener(e -> {

@@ -110,6 +110,7 @@ public class AdminUI extends JFrame {
         pickupTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
         pickupTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         JButton nowPickupButton = new JButton("الان");
+        nowPickupButton.setBackground(new Color(230, 230, 230));
         nowPickupButton.setFont(new Font("Arial", Font.PLAIN, 12));
         nowPickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         nowPickupButton.addActionListener(e -> pickupTimeField.setText(getDate()));
@@ -190,6 +191,7 @@ public class AdminUI extends JFrame {
         returnTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
         returnTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         JButton nowReturnButton = new JButton("الان");
+        nowReturnButton.setBackground(new Color(230, 230, 230));
         nowReturnButton.setFont(new Font("Arial", Font.PLAIN, 12));
         nowReturnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         nowReturnButton.addActionListener(e -> returnTimeField.setText(getDate()));
@@ -373,7 +375,10 @@ public class AdminUI extends JFrame {
         int[] shams_date = DateConverter.gregorian_to_jalali(
                 Integer.parseInt(date[0]), Integer.parseInt(date[1]), Integer.parseInt(date[2]));
 
-        return shams_date[0] + "/" + shams_date[1] + "/" + shams_date[2] + " " + date_time[1];
+        return shams_date[0] + "/" +
+                ((shams_date[1] < 10) ? "0" + shams_date[1] : shams_date[1]) + "/" +
+                ((shams_date[2] < 10) ? "0" + shams_date[2] : shams_date[2]) +
+                " " + date_time[1];
     }
 
     public static void main(String[] args) {
