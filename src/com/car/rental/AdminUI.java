@@ -300,8 +300,8 @@ public class AdminUI extends JFrame {
             String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
             String carPlate = selectedCar[2];
 
-            String pickupTime = pickupTimeField.getText();
-            String destination = destinationField.getText();
+            String pickupTime = pickupTimeField.getText().strip();
+            String destination = destinationField.getText().strip();
 
             if (pickupTime.isEmpty() || destination.isEmpty()) {
                 JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
@@ -323,8 +323,8 @@ public class AdminUI extends JFrame {
     }
 
     private void returnCar() {
-        String returnTime = returnTimeField.getText();
-        String confirmCodeText = confirmCodeField.getText();
+        String returnTime = returnTimeField.getText().strip();
+        String confirmCodeText = confirmCodeField.getText().strip();
 
         if (returnTime.isEmpty() || confirmCodeText.isEmpty()) {
             JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");

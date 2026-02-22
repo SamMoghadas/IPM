@@ -2,7 +2,6 @@ package com.car.rental;
 
 import javax.swing.*;
 import javax.swing.border.*;
-import javax.swing.text.*;
 import java.awt.*;
 import java.sql.*;
 
@@ -35,12 +34,12 @@ public class AddFrame extends JFrame {
         // ----------------- Car Form Panel -----------------
         JPanel carFormPanel = createTitledPanel("اضافه کردن ماشین");
 
-        JTextField modelField = createRTLField();
+        JTextField modelField = createField(true);
 
         // پلاک
-        JPanel plateInputPanel = createPlateInputPanel();
+        PlateInputPanel plateInputPanel = new PlateInputPanel();
 
-        JTextField colorField = createRTLField();
+        JTextField colorField = createField(true);
 
         JButton addCarButton = createActionButton("اضافه کردن ماشین", new Color(34, 139, 34));
 
@@ -54,10 +53,10 @@ public class AddFrame extends JFrame {
         // ----------------- Employee Form Panel -----------------
         JPanel employeeFormPanel = createTitledPanel("اضافه کردن کارمند");
 
-        JTextField personnelIdField = new JTextField(20);
-        JTextField nameField = createRTLField();
-        JTextField phoneField = new JTextField(20);
-        JTextField telIdField = new JTextField(20);
+        JTextField personnelIdField = createField(false);
+        JTextField nameField = createField(true);
+        JTextField phoneField = createField(false);
+        JTextField telIdField = createField(false);
 
         JButton addEmployeeButton = createActionButton("اضافه کردن کارمند", new Color(34, 139, 34));
 
@@ -74,9 +73,9 @@ public class AddFrame extends JFrame {
 
         // ----------------- Add Car Logic -----------------
         addCarButton.addActionListener(e -> {
-            String name = modelField.getText().trim();
-            String plate = buildPlateString(plateInputPanel);
-            String color = colorField.getText().trim();
+            String name = modelField.getText().strip();
+            String plate = plateInputPanel.getPlate();
+            String color = colorField.getText().strip();
 
             if (name.isEmpty() || color.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "تمام فیلدهای ماشین باید پر شوند!");
@@ -88,7 +87,7 @@ public class AddFrame extends JFrame {
                 JOptionPane.showMessageDialog(this, "ماشین با موفقیت اضافه شد!");
 
                 modelField.setText("");
-                clearPlateFields(plateInputPanel);
+                plateInputPanel.clear();
                 colorField.setText("");
 
             } catch (SQLException ex) {
@@ -98,7 +97,7 @@ public class AddFrame extends JFrame {
 
         // ----------------- Add Employee Logic -----------------
         addEmployeeButton.addActionListener(e -> {
-            String personnelIdText = personnelIdField.getText().trim();
+            String personnelIdText = personnelIdField.getText().strip();
             if (personnelIdText.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "شماره پرسنلی را وارد کنید!");
                 return;
@@ -112,9 +111,9 @@ public class AddFrame extends JFrame {
                 return;
             }
 
-            String name = nameField.getText().trim();
-            String phone = phoneField.getText().trim();
-            String telId = telIdField.getText().trim();
+            String name = nameField.getText().strip();
+            String phone = phoneField.getText().strip();
+            String telId = telIdField.getText().strip();
 
             if (name.isEmpty() || phone.isEmpty() || telId.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "تمام فیلدهای کارمند باید پر شوند!");
@@ -144,8 +143,10 @@ public class AddFrame extends JFrame {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(Color.WHITE);
-        TitledBorder border = BorderFactory.createTitledBorder(title);
+        Border line = new LineBorder(new Color(150, 220, 200), 2, true);
+        TitledBorder border = BorderFactory.createTitledBorder(line, title);
         border.setTitleJustification(TitledBorder.RIGHT);
+        border.setTitleColor(Color.DARK_GRAY);
         panel.setBorder(border);
         return panel;
     }
@@ -154,7 +155,7 @@ public class AddFrame extends JFrame {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
         row.setBackground(Color.WHITE);
 
-        JLabel label = new JLabel(labelText);
+        JLabel label = new JLabel(labelText, SwingConstants.RIGHT);
         label.setPreferredSize(new Dimension(75, 25));
         row.add(field);
         row.add(label);
@@ -162,9 +163,12 @@ public class AddFrame extends JFrame {
         parent.add(row);
     }
 
-    private JTextField createRTLField() {
+    private JTextField createField(boolean RTL) {
         JTextField field = new JTextField(20);
-        field.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        if (RTL) field.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        field.setBorder(BorderFactory.createCompoundBorder(new LineBorder(
+                new Color(122, 138, 153), 1),
+                BorderFactory.createEmptyBorder(4, 6, 4, 6)));
         return field;
     }
 
@@ -174,77 +178,5 @@ public class AddFrame extends JFrame {
         btn.setForeground(Color.WHITE);
         btn.setFocusPainted(false);
         return btn;
-    }
-
-    private JPanel createPlateInputPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
-        panel.setBackground(Color.WHITE);
-
-        Dimension fieldSize = new Dimension(40, 28);
-
-        JTextField firstTwo = new JTextField(2);
-        firstTwo.setDocument(new LimitDigitsDocument(2));
-        firstTwo.setPreferredSize(fieldSize);
-
-        String[] letters = {"الف", "ب", "ج", "د", "س", "ص", "ط", "ق", "گ", "ل", "م", "ن", "و", "هـ", "ی"};
-        JComboBox<String> letterCombo = new JComboBox<>(letters);
-        letterCombo.setPreferredSize(new Dimension(50, 28));
-
-        JTextField middleThree = new JTextField(3);
-        middleThree.setDocument(new LimitDigitsDocument(3));
-        middleThree.setPreferredSize(new Dimension(50, 28));
-
-        JTextField cityCode = new JTextField(2);
-        cityCode.setDocument(new LimitDigitsDocument(2));
-        cityCode.setPreferredSize(fieldSize);
-
-        panel.add(firstTwo);
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(letterCombo);
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(middleThree);
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(new JLabel("ایران"));
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(cityCode);
-
-        return panel;
-    }
-
-    private String buildPlateString(JPanel platePanel) {
-        Component[] comps = platePanel.getComponents();
-        JTextField firstTwo = (JTextField) comps[0];
-        JComboBox<?> letterCombo = (JComboBox<?>) comps[2];
-        JTextField middleThree = (JTextField) comps[4];
-        JTextField cityCode = (JTextField) comps[8];
-
-        return cityCode.getText() + " ایران " + middleThree.getText() + " "
-                + letterCombo.getSelectedItem() + " " + firstTwo.getText();
-    }
-
-    private void clearPlateFields(JPanel platePanel) {
-        for (Component c : platePanel.getComponents()) {
-            if (c instanceof JTextField tf) tf.setText("");
-        }
-    }
-
-    // کنترل ارقام
-    static class LimitDigitsDocument extends PlainDocument {
-        private final int limit;
-
-        public LimitDigitsDocument(int limit) {
-            this.limit = limit;
-        }
-
-        @Override
-        public void insertString(int offset, String str, AttributeSet attr)
-                throws BadLocationException {
-            if (str == null) return;
-
-            if ((getLength() + str.length()) <= limit && str.matches("\\d+")) {
-                super.insertString(offset, str, attr);
-            }
-        }
     }
 }

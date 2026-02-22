@@ -194,23 +194,27 @@ public class ManageFrame extends JFrame {
     }
 
     private void deleteCar() {
-        selectedCarRow = carTable.getSelectedRow();
-        if (selectedCarRow >= 0) {
-            if (carModel.getValueAt(selectedCarRow, 3).equals("آزاد")) {
-                boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این ماشین را حذف کنید؟");
-                if (confirmed) {
-                    try {
-                        String plate = carModel.getValueAt(selectedCarRow, 2).toString();
-                        db.deleteCar(plate, this::loadDataFromDB);
-                        carModel.removeRow(selectedCarRow);
-                        JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
-                    } catch (SQLException e) {
-                        JOptionPane.showMessageDialog(this, "خطا در حذف ماشین: " + e.getMessage());
-                    }
+        int viewRow = carTable.getSelectedRow();
+        if (viewRow < 0) {
+            JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
+            return;
+        }
+
+        int modelRow = carTable.convertRowIndexToModel(viewRow);
+
+        if (carModel.getValueAt(modelRow, 3).equals("آزاد")) {
+            boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این ماشین را حذف کنید؟");
+            if (confirmed) {
+                try {
+                    String plate = carModel.getValueAt(modelRow, 2).toString();
+                    db.deleteCar(plate, this::loadDataFromDB);
+                    JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
+                } catch (SQLException e) {
+                    JOptionPane.showMessageDialog(this, "خطا در حذف ماشین: " + e.getMessage());
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "ماشین در ماموریت را نمیتوانید حذف کنید!");
             }
+        } else {
+            JOptionPane.showMessageDialog(this, "ماشین در ماموریت را نمیتوانید حذف کنید!");
         }
     }
 
@@ -230,23 +234,27 @@ public class ManageFrame extends JFrame {
     }
 
     private void deleteEmployee() {
-        selectedEmployeeRow = employeeTable.getSelectedRow();
-        if (selectedEmployeeRow >= 0) {
-            if (employeeModel.getValueAt(selectedEmployeeRow, 4).equals("آزاد")) {
-                boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این کارمند را حذف کنید؟");
-                if (confirmed) {
-                    try {
-                        int personnelId = Integer.parseInt(employeeModel.getValueAt(selectedEmployeeRow, 0).toString());
-                        db.deleteEmployee(personnelId, this::loadDataFromDB);
-                        employeeModel.removeRow(selectedEmployeeRow);
-                        JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
-                    } catch (SQLException e) {
-                        JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());
-                    }
+        int viewRow = employeeTable.getSelectedRow();
+        if (viewRow < 0) {
+            JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
+            return;
+        }
+
+        int modelRow = employeeTable.convertRowIndexToModel(viewRow);
+
+        if (employeeModel.getValueAt(modelRow, 4).equals("آزاد")) {
+            boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این کارمند را حذف کنید؟");
+            if (confirmed) {
+                try {
+                    int personnelId = Integer.parseInt(employeeModel.getValueAt(modelRow, 0).toString());
+                    db.deleteEmployee(personnelId, this::loadDataFromDB); // فقط این
+                    JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
+                } catch (SQLException e) {
+                    JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "کارمند در ماموریت را نمیتوانید حذف کنید!");
             }
+        } else {
+            JOptionPane.showMessageDialog(this, "کارمند در ماموریت را نمیتوانید حذف کنید!");
         }
     }
 
