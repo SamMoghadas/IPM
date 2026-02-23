@@ -1,4 +1,7 @@
-package com.car.rental;
+package com.car.rental.ui.frames;
+
+import com.car.rental.db.DatabaseManager;
+import com.car.rental.model.RentalRecord;
 
 import javax.swing.*;
 import java.awt.*;
@@ -9,15 +12,15 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.logging.Logger;
 
-public class AdminUI extends JFrame {
+public class MainFrame extends JFrame {
     private final DatabaseManager db;
     private JComboBox<String> carCombo;
     private JComboBox<String> employeeCombo;
     private JTextField pickupTimeField, destinationField;
     private JTextField confirmCodeField, returnTimeField;
-    private static final Logger logger = Logger.getLogger(AdminUI.class.getName());
+    private static final Logger logger = Logger.getLogger(MainFrame.class.getName());
 
-    public AdminUI() {
+    public MainFrame() {
         db = new DatabaseManager();
         db.initDatabase();
         createMainUI();
@@ -382,7 +385,7 @@ public class AdminUI extends JFrame {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(AdminUI::new);
+        SwingUtilities.invokeLater(MainFrame::new);
     }
 
     static class DateConverter {

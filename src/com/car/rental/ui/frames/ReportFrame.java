@@ -1,4 +1,8 @@
-package com.car.rental;
+package com.car.rental.ui.frames;
+
+import com.car.rental.db.DatabaseManager;
+import com.car.rental.ui.components.PlateInputPanel;
+import com.car.rental.model.RentalRecord;
 
 import javax.swing.*;
 import javax.swing.table.*;
@@ -35,7 +39,7 @@ public class ReportFrame extends JFrame {
         backButton.setFocusPainted(false);
         backButton.addActionListener(e -> {
             dispose();
-            new AdminUI();
+            new MainFrame();
         });
         topPanel.add(backButton, BorderLayout.WEST);
 

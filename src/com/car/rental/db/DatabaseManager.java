@@ -1,4 +1,9 @@
-package com.car.rental;
+package com.car.rental.db;
+
+import com.car.rental.util.DataChangeCallback;
+import com.car.rental.model.Car;
+import com.car.rental.model.Employee;
+import com.car.rental.model.RentalRecord;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -286,6 +291,40 @@ public class DatabaseManager {
             stmt.setString(2, name);
             stmt.setString(3, phone);
             stmt.setString(4, telegramId);
+            stmt.executeUpdate();
+        }
+    }
+
+    // --- ویرایش ماشین ---
+    public void updateCar(Car car, String oldPlate) throws SQLException {
+        String sql = "UPDATE CarTable SET name = ?, color = ?, plate = ? WHERE plate = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, car.getModel());
+            stmt.setString(2, car.getColor());
+            stmt.setString(3, car.getPlate());
+
+            stmt.setString(4, oldPlate);
+
+            stmt.executeUpdate();
+        }
+    }
+
+    // --- ویرایش کارمند ---
+    public void updateEmployee(Employee emp) throws SQLException {
+        String sql = "UPDATE EmployeeTable SET name = ?, phone = ?, telegram_id = ? " +
+                "WHERE personnel_id = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, emp.getName());
+            stmt.setString(2, emp.getPhone());
+            stmt.setString(3, emp.getTelegramId());
+            stmt.setInt(4, emp.getPersonnelId());
+
             stmt.executeUpdate();
         }
     }

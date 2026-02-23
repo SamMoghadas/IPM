@@ -1,4 +1,7 @@
-package com.car.rental;
+package com.car.rental.ui.frames;
+
+import com.car.rental.db.DatabaseManager;
+import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
 import javax.swing.border.*;
@@ -25,7 +28,7 @@ public class AddFrame extends JFrame {
         backButton.setFocusPainted(false);
         backButton.addActionListener(e -> {
             dispose();
-            new AdminUI();
+            new MainFrame();
         });
 
         headerPanel.add(backButton);

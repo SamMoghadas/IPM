@@ -1,4 +1,4 @@
-package com.car.rental;
+package com.car.rental.model;
 
 public class RentalRecord {
     public int personnelId;

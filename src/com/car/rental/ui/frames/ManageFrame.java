@@ -1,20 +1,21 @@
-package com.car.rental;
+package com.car.rental.ui.frames;
+
+import com.car.rental.model.Car;
+import com.car.rental.db.DatabaseManager;
+import com.car.rental.model.Employee;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.awt.event.WindowEvent;
 import java.sql.SQLException;
 
 public class ManageFrame extends JFrame {
     private final DatabaseManager db;
-    private JTabbedPane tabbedPane;
     private JTable carTable, employeeTable;
     private DefaultTableModel carModel, employeeModel;
-    private JTextField editNameField, editPlateField, editColorField, editPhoneField, editTelIdField;
-    private int selectedCarRow = -1;
-    private int selectedEmployeeRow = -1;
 
     public ManageFrame() {
         db = new DatabaseManager();
@@ -38,12 +39,12 @@ public class ManageFrame extends JFrame {
         backButton.setBackground(new Color(230, 230, 230));
         backButton.addActionListener(e -> {
             dispose();
-            new AdminUI();
+            new MainFrame();
         });
         topPanel.add(backButton);
         add(topPanel, BorderLayout.NORTH);
 
-        tabbedPane = new JTabbedPane();
+        JTabbedPane tabbedPane = new JTabbedPane();
         tabbedPane.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         // --- جدول ماشین‌ها ---
@@ -80,7 +81,7 @@ public class ManageFrame extends JFrame {
         carButtons.add(deleteCarButton);
         carPanel.add(carButtons, BorderLayout.SOUTH);
 
-        editCarButton.addActionListener(e -> editCar());
+        editCarButton.addActionListener(e -> openCarEditFrame());
         deleteCarButton.addActionListener(e -> deleteCar());
 
         // --- جدول کارمندها ---
@@ -117,38 +118,13 @@ public class ManageFrame extends JFrame {
         empButtons.add(deleteEmpButton);
         empPanel.add(empButtons, BorderLayout.SOUTH);
 
-        editEmpButton.addActionListener(e -> editEmployee());
+        editEmpButton.addActionListener(e -> openEmployeeEditFrame());
         deleteEmpButton.addActionListener(e -> deleteEmployee());
 
         tabbedPane.addTab("ماشین‌ها", carPanel);
         tabbedPane.addTab("کارمندها", empPanel);
 
         add(tabbedPane, BorderLayout.CENTER);
-
-        // --- پنل ویرایش ---
-        JPanel editPanel = new JPanel(new GridLayout(0, 2, 10, 10));
-        editPanel.setVisible(false);
-        editNameField = new JTextField(15);
-        editPlateField = new JTextField(15);
-        editColorField = new JTextField(15);
-        editPhoneField = new JTextField(15);
-        editTelIdField = new JTextField(15);
-        JButton saveButton = new JButton("ذخیره");
-        saveButton.addActionListener(e -> saveChanges());
-        editPanel.add(new JLabel("نام:"));
-        editPanel.add(editNameField);
-        editPanel.add(new JLabel("پلاک:"));
-        editPanel.add(editPlateField);
-        editPanel.add(new JLabel("رنگ:"));
-        editPanel.add(editColorField);
-        editPanel.add(new JLabel("شماره تماس:"));
-        editPanel.add(editPhoneField);
-        editPanel.add(new JLabel("آیدی تلگرام:"));
-        editPanel.add(editTelIdField);
-        editPanel.add(new JLabel());
-        editPanel.add(saveButton);
-
-        add(editPanel, BorderLayout.SOUTH);
     }
 
     private void centerColumns(JTable table) {
@@ -178,19 +154,70 @@ public class ManageFrame extends JFrame {
         }
     }
 
-    private void editCar() {
-        selectedCarRow = carTable.getSelectedRow();
-        if (selectedCarRow >= 0) {
-            editNameField.setText(carModel.getValueAt(selectedCarRow, 0).toString());
-            editPlateField.setText(carModel.getValueAt(selectedCarRow, 1).toString());
-            editColorField.setText(carModel.getValueAt(selectedCarRow, 2).toString());
-            editPhoneField.setText("");
-            editTelIdField.setText("");
-            tabbedPane.setVisible(false);
-            getContentPane().getComponent(1).setVisible(true);
-        } else {
+    private void openCarEditFrame() {
+        int viewRow = carTable.getSelectedRow();
+        if (viewRow < 0) {
             JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
+            return;
         }
+
+        int modelRow = carTable.convertRowIndexToModel(viewRow);
+
+        String model = carTable.getValueAt(modelRow, 0).toString();
+        String plate = carTable.getValueAt(modelRow, 1).toString();
+        String color = carTable.getValueAt(modelRow, 2).toString();
+        String status = carTable.getValueAt(modelRow, 3).toString();
+
+        if (status.equals("در ماموریت")) {
+            JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در ماموریت وجود ندارد!");
+            return;
+        }
+
+        Car car = new Car(model, plate, color);
+
+        dispose();
+        EditFrame editFrame = new EditFrame(car);
+        editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                new ManageFrame();
+            }
+        });
+        editFrame.setVisible(true);
+    }
+
+    private void openEmployeeEditFrame() {
+        int viewRow = employeeTable.getSelectedRow();
+        if (viewRow < 0) {
+            JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
+            return;
+        }
+
+        int modelRow = employeeTable.convertRowIndexToModel(viewRow);
+
+        int personnelId = Integer.parseInt(employeeModel.getValueAt(modelRow, 0).toString());
+        String name = employeeModel.getValueAt(modelRow, 1).toString();
+        String phone = employeeModel.getValueAt(modelRow, 2).toString();
+        String telegramId = employeeModel.getValueAt(modelRow, 3).toString();
+        String status = employeeModel.getValueAt(modelRow, 4).toString();
+
+        if (status.equals("در ماموریت")) {
+            JOptionPane.showMessageDialog(this,
+                    "این کارمند در مأموریت است و امکان ویرایش آن وجود ندارد!");
+            return;
+        }
+
+        Employee emp = new Employee(personnelId, name, phone, telegramId);
+
+        dispose();
+        EditFrame editFrame = new EditFrame(emp);
+        editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                new ManageFrame();
+            }
+        });
+        editFrame.setVisible(true);
     }
 
     private void deleteCar() {
@@ -218,21 +245,6 @@ public class ManageFrame extends JFrame {
         }
     }
 
-    private void editEmployee() {
-        selectedEmployeeRow = employeeTable.getSelectedRow();
-        if (selectedEmployeeRow >= 0) {
-            editNameField.setText(employeeModel.getValueAt(selectedEmployeeRow, 1).toString());
-            editPhoneField.setText(employeeModel.getValueAt(selectedEmployeeRow, 2).toString());
-            editTelIdField.setText(employeeModel.getValueAt(selectedEmployeeRow, 3).toString());
-            editPlateField.setText("");
-            editColorField.setText("");
-            tabbedPane.setVisible(false);
-            getContentPane().getComponent(1).setVisible(true);
-        } else {
-            JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
-        }
-    }
-
     private void deleteEmployee() {
         int viewRow = employeeTable.getSelectedRow();
         if (viewRow < 0) {
@@ -256,29 +268,6 @@ public class ManageFrame extends JFrame {
         } else {
             JOptionPane.showMessageDialog(this, "کارمند در ماموریت را نمیتوانید حذف کنید!");
         }
-    }
-
-    private void saveChanges() {
-        if (selectedCarRow >= 0) {
-            carModel.setValueAt(editNameField.getText(), selectedCarRow, 0);
-            carModel.setValueAt(editPlateField.getText(), selectedCarRow, 1);
-            carModel.setValueAt(editColorField.getText(), selectedCarRow, 2);
-            JOptionPane.showMessageDialog(this, "ماشین ویرایش شد!");
-        } else if (selectedEmployeeRow >= 0) {
-            employeeModel.setValueAt(editNameField.getText(), selectedEmployeeRow, 1);
-            employeeModel.setValueAt(editPhoneField.getText(), selectedEmployeeRow, 2);
-            employeeModel.setValueAt(editTelIdField.getText(), selectedEmployeeRow, 3);
-            JOptionPane.showMessageDialog(this, "کارمند ویرایش شد!");
-        }
-        tabbedPane.setVisible(true);
-        getContentPane().getComponent(1).setVisible(false);
-        editNameField.setText("");
-        editPlateField.setText("");
-        editColorField.setText("");
-        editPhoneField.setText("");
-        editTelIdField.setText("");
-        selectedCarRow = -1;
-        selectedEmployeeRow = -1;
     }
 
     private boolean deleteConfirmDialog(String message) {

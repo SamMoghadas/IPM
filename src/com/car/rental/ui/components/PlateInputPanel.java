@@ -1,4 +1,4 @@
-package com.car.rental;
+package com.car.rental.ui.components;
 
 import javax.swing.*;
 import javax.swing.text.*;
@@ -6,15 +6,28 @@ import java.awt.*;
 
 public class PlateInputPanel extends JPanel {
 
-    private final JTextField firstTwo;
-    private final JComboBox<String> letterCombo;
-    private final JTextField middleThree;
-    private final JTextField cityCode;
+    private JTextField firstTwo;
+    private JComboBox<String> letterCombo;
+    private JTextField middleThree;
+    private JTextField cityCode;
 
     public PlateInputPanel() {
+        initPanel();
+        initComponents();
+        initLayout();
+    }
+
+    public PlateInputPanel(String plate) {
+        this();
+        setPlate(plate);
+    }
+
+    private void initPanel() {
         setLayout(new BoxLayout(this, BoxLayout.X_AXIS));
         setBackground(Color.WHITE);
+    }
 
+    private void initComponents() {
         Dimension fieldSize = new Dimension(40, 24);
 
         firstTwo = new JTextField(2);
@@ -32,7 +45,9 @@ public class PlateInputPanel extends JPanel {
         cityCode = new JTextField(2);
         cityCode.setDocument(new LimitDigitsDocument(2));
         cityCode.setPreferredSize(fieldSize);
+    }
 
+    private void initLayout() {
         add(firstTwo);
         add(Box.createHorizontalStrut(5));
         add(letterCombo);
@@ -52,6 +67,22 @@ public class PlateInputPanel extends JPanel {
                 middleThree.getText() + " " +
                 letterCombo.getSelectedItem() + " " +
                 firstTwo.getText();
+    }
+
+    public void setPlate(String plate) {
+        if (plate == null || plate.isBlank()) return;
+
+        String[] parts = plate.trim().split(" ");
+
+        String first = parts[4];
+        String letter = parts[3];
+        String mid = parts[2];
+        String city = parts[0];
+
+        firstTwo.setText(first);
+        letterCombo.setSelectedItem(letter);
+        middleThree.setText(mid);
+        cityCode.setText(city);
     }
 
     public boolean isComplete() {
