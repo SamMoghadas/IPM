@@ -22,7 +22,6 @@ public class DatabaseManager {
         return connection;
     }
 
-    // --- Create tables ---
     public void initDatabase() {
         String employeeTable =
                 "CREATE TABLE IF NOT EXISTS EmployeeTable (" +
@@ -46,18 +45,15 @@ public class DatabaseManager {
                 "is_rented INTEGER DEFAULT 0" +
                 ")";
 
-        // RentalTable still uses confirm_code for now (will be removed in later step).
-        // employee_id now references EmployeeTable.id (internal key).
         String rentalTable =
                 "CREATE TABLE IF NOT EXISTS RentalTable (" +
-                "confirm_code INTEGER, " +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "employee_id INTEGER NOT NULL, " +
                 "car_id INTEGER NOT NULL, " +
                 "pickup_date TEXT, " +
                 "return_date TEXT, " +
                 "destination TEXT NOT NULL, " +
                 "is_active INTEGER DEFAULT 1, " +
-                "PRIMARY KEY (confirm_code), " +
                 "FOREIGN KEY(employee_id) REFERENCES EmployeeTable(id) ON UPDATE CASCADE, " +
                 "FOREIGN KEY(car_id) REFERENCES CarTable(id) ON UPDATE CASCADE" +
                 ")";
@@ -73,7 +69,6 @@ public class DatabaseManager {
 
     // ==================== Employee ====================
 
-    /** Add a new employee. deviceUserId must match the User ID on the ZKTeco device. */
     public void addEmployee(String deviceUserId, String name, String phone) throws SQLException {
         String sql = "INSERT INTO EmployeeTable(device_user_id, name, phone) VALUES(?,?,?)";
         try (Connection conn = getConnection();
@@ -85,7 +80,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Find employee by device User ID (used by real-time fingerprint events). */
     public Employee findByDeviceUserId(String deviceUserId) throws SQLException {
         String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
                 "FROM EmployeeTable WHERE device_user_id = ? AND is_active = 1";
@@ -101,7 +95,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Find employee by internal id. */
     public Employee findEmployeeById(int id) throws SQLException {
         String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
                 "FROM EmployeeTable WHERE id = ? AND is_active = 1";
@@ -117,7 +110,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Active employees who are not currently renting a car. */
     public List<Employee> getAvailableEmployees() throws SQLException {
         List<Employee> list = new ArrayList<>();
         String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
@@ -132,7 +124,6 @@ public class DatabaseManager {
         return list;
     }
 
-    /** All active employees (for management screen). */
     public List<Employee> getAllEmployees() throws SQLException {
         List<Employee> list = new ArrayList<>();
         String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
@@ -147,7 +138,6 @@ public class DatabaseManager {
         return list;
     }
 
-    /** Update name and phone (device_user_id is immutable after creation). */
     public void updateEmployee(Employee emp) throws SQLException {
         String sql = "UPDATE EmployeeTable SET name = ?, phone = ?, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
@@ -160,7 +150,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Soft-delete employee. */
     public void deleteEmployee(int id, DataChangeCallback callback) throws SQLException {
         String sql = "UPDATE EmployeeTable SET is_active = 0, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
@@ -174,7 +163,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Soft-delete by device_user_id. */
     public void deleteEmployeeByDeviceUserId(String deviceUserId, DataChangeCallback callback) throws SQLException {
         String sql = "UPDATE EmployeeTable SET is_active = 0, " +
                 "updated_at = datetime('now','localtime') WHERE device_user_id = ?";
@@ -188,7 +176,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Set renting status by internal employee id. */
     public void setRentingStatus(int employeeId, boolean renting) throws SQLException {
         String sql = "UPDATE EmployeeTable SET is_renting = ?, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
@@ -200,7 +187,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Set renting status by device_user_id. */
     public void setRentingStatusByDeviceUserId(String deviceUserId, boolean renting) throws SQLException {
         String sql = "UPDATE EmployeeTable SET is_renting = ?, " +
                 "updated_at = datetime('now','localtime') WHERE device_user_id = ?";
@@ -323,36 +309,28 @@ public class DatabaseManager {
         }
     }
 
-    // ==================== Rental ====================
-    // NOTE: confirm_code is still used temporarily.
-    // In the next step we will remove it and rely on fingerprint only.
+    // ==================== Rental (no confirm_code) ====================
 
     /**
-     * Register car pickup.
-     * @param deviceUserId  User ID on the fingerprint device
-     * @param carPlate      car plate
-     * @param pickupTime    pickup datetime string
-     * @param destination   destination
-     * @param confirmCode   temporary confirmation code (will be removed later)
+     * Register car pickup using fingerprint device user id and device time.
      */
     public void insertRental(String deviceUserId,
                              String carPlate,
                              String pickupTime,
-                             String destination,
-                             int confirmCode) throws SQLException {
+                             String destination) throws SQLException {
 
         Employee emp = findByDeviceUserId(deviceUserId);
         if (emp == null) {
-            throw new SQLException("Employee not found for device user id: " + deviceUserId);
+            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
         }
         if (emp.isRenting()) {
-            throw new SQLException("Employee is already renting a car");
+            throw new SQLException("این کارمند در حال حاضر در مأموریت است");
         }
 
         int carId = getCarIdByPlate(carPlate);
 
-        String insertSql = "INSERT INTO RentalTable(employee_id, car_id, pickup_date, destination, confirm_code) " +
-                "VALUES (?, ?, ?, ?, ?)";
+        String insertSql = "INSERT INTO RentalTable(employee_id, car_id, pickup_date, destination) " +
+                "VALUES (?, ?, ?, ?)";
         String updateCarSql = "UPDATE CarTable SET is_rented = 1 WHERE id = ?";
         String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 1, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
@@ -367,7 +345,6 @@ public class DatabaseManager {
                 insertStmt.setInt(2, carId);
                 insertStmt.setString(3, pickupTime);
                 insertStmt.setString(4, destination);
-                insertStmt.setInt(5, confirmCode);
                 insertStmt.executeUpdate();
 
                 updateCarStmt.setInt(1, carId);
@@ -387,70 +364,18 @@ public class DatabaseManager {
     }
 
     /**
-     * Register car return by confirm code (temporary – will be replaced by fingerprint).
-     */
-    public boolean returnCar(int confirmCode, String returnDate) throws SQLException {
-        String selectSql = "SELECT car_id, employee_id FROM RentalTable " +
-                "WHERE confirm_code = ? AND return_date IS NULL";
-        String updateRentalSql = "UPDATE RentalTable SET return_date = ?, is_active = 0 WHERE confirm_code = ?";
-        String updateCarSql = "UPDATE CarTable SET is_rented = 0 WHERE id = ?";
-        String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 0, " +
-                "updated_at = datetime('now','localtime') WHERE id = ?";
-
-        try (Connection conn = getConnection()) {
-            conn.setAutoCommit(false);
-
-            try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
-                selectStmt.setInt(1, confirmCode);
-                try (ResultSet rs = selectStmt.executeQuery()) {
-                    if (!rs.next()) {
-                        conn.rollback();
-                        return false;
-                    }
-
-                    int carId = rs.getInt("car_id");
-                    int empId = rs.getInt("employee_id");
-
-                    try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
-                         PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
-                         PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
-
-                        updateRentalStmt.setString(1, returnDate);
-                        updateRentalStmt.setInt(2, confirmCode);
-                        updateRentalStmt.executeUpdate();
-
-                        updateCarStmt.setInt(1, carId);
-                        updateCarStmt.executeUpdate();
-
-                        updateEmpStmt.setInt(1, empId);
-                        updateEmpStmt.executeUpdate();
-
-                        conn.commit();
-                        return true;
-                    } catch (SQLException e) {
-                        conn.rollback();
-                        throw e;
-                    } finally {
-                        conn.setAutoCommit(true);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Return car by device_user_id (fingerprint-based).
-     * Finds the active rental of this employee and closes it.
+     * Return car by device_user_id (fingerprint).
+     * Closes the active rental of this employee.
      */
     public boolean returnCarByDeviceUserId(String deviceUserId, String returnDate) throws SQLException {
         Employee emp = findByDeviceUserId(deviceUserId);
         if (emp == null) {
-            throw new SQLException("Employee not found for device user id: " + deviceUserId);
+            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
         }
 
-        String selectSql = "SELECT confirm_code, car_id FROM RentalTable " +
+        String selectSql = "SELECT id, car_id FROM RentalTable " +
                 "WHERE employee_id = ? AND return_date IS NULL AND is_active = 1";
-        String updateRentalSql = "UPDATE RentalTable SET return_date = ?, is_active = 0 WHERE confirm_code = ?";
+        String updateRentalSql = "UPDATE RentalTable SET return_date = ?, is_active = 0 WHERE id = ?";
         String updateCarSql = "UPDATE CarTable SET is_rented = 0 WHERE id = ?";
         String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 0, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
@@ -463,10 +388,10 @@ public class DatabaseManager {
                 try (ResultSet rs = selectStmt.executeQuery()) {
                     if (!rs.next()) {
                         conn.rollback();
-                        return false; // no active rental
+                        return false;
                     }
 
-                    int confirmCode = rs.getInt("confirm_code");
+                    int rentalId = rs.getInt("id");
                     int carId = rs.getInt("car_id");
 
                     try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
@@ -474,7 +399,7 @@ public class DatabaseManager {
                          PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
 
                         updateRentalStmt.setString(1, returnDate);
-                        updateRentalStmt.setInt(2, confirmCode);
+                        updateRentalStmt.setInt(2, rentalId);
                         updateRentalStmt.executeUpdate();
 
                         updateCarStmt.setInt(1, carId);
@@ -524,40 +449,6 @@ public class DatabaseManager {
             }
         }
         return records;
-    }
-
-    public boolean isCCDuplicated(int confirmCode) throws SQLException {
-        String sql = "SELECT confirm_code FROM RentalTable WHERE confirm_code = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, confirmCode);
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
-    public RentalRecord getRentalRecord(int confirmCode) throws SQLException {
-        String query = "SELECT e.name AS employeeName, c.name AS carName " +
-                "FROM RentalTable r " +
-                "JOIN EmployeeTable e ON r.employee_id = e.id " +
-                "JOIN CarTable c ON r.car_id = c.id " +
-                "WHERE r.confirm_code = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setInt(1, confirmCode);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return new RentalRecord(
-                            0,
-                            rs.getString("employeeName"),
-                            rs.getString("carName"),
-                            "", "", "", "", ""
-                    );
-                }
-                return null;
-            }
-        }
     }
 
     /** Get active rental info for an employee (by device_user_id). */
