@@ -1,6 +1,7 @@
 package com.car.rental.ui.frames;
 
 import com.car.rental.db.DatabaseManager;
+import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
 
 import javax.swing.*;
@@ -8,6 +9,7 @@ import java.awt.*;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 import java.util.logging.Logger;
@@ -35,12 +37,10 @@ public class MainFrame extends JFrame {
         applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         getContentPane().setBackground(Color.WHITE);
 
-        // پنل‌های جدا
         JPanel pickupPanel = createPickupPanel();
         JPanel returnPanel = createReturnPanel();
         JPanel buttonsPanel = createButtonsPanel();
 
-        // چیدمان اصلی
         JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
         mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         mainPanel.setBackground(Color.WHITE);
@@ -65,7 +65,6 @@ public class MainFrame extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         DefaultListCellRenderer renderer = new DefaultListCellRenderer();
 
-        // ماشین
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.EAST;
@@ -81,7 +80,6 @@ public class MainFrame extends JFrame {
         loadCars();
         pickupPanel.add(carCombo, gbc);
 
-        // کارمند
         gbc.gridx = 0;
         gbc.gridy = 1;
         gbc.anchor = GridBagConstraints.EAST;
@@ -97,7 +95,6 @@ public class MainFrame extends JFrame {
         loadEmployees();
         pickupPanel.add(employeeCombo, gbc);
 
-        // زمان تحویل
         gbc.gridx = 0;
         gbc.gridy = 2;
         gbc.anchor = GridBagConstraints.EAST;
@@ -121,7 +118,6 @@ public class MainFrame extends JFrame {
         pickupTimePanel.add(nowPickupButton);
         pickupPanel.add(pickupTimePanel, gbc);
 
-        // مقصد
         gbc.gridx = 0;
         gbc.gridy = 3;
         gbc.anchor = GridBagConstraints.EAST;
@@ -135,7 +131,6 @@ public class MainFrame extends JFrame {
         destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         pickupPanel.add(destinationField, gbc);
 
-        // دکمه ثبت تحویل
         gbc.gridx = 1;
         gbc.gridy = 4;
         gbc.anchor = GridBagConstraints.CENTER;
@@ -164,7 +159,6 @@ public class MainFrame extends JFrame {
         gbc.insets = new Insets(5, 15, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // کد تحویل
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.EAST;
@@ -178,7 +172,6 @@ public class MainFrame extends JFrame {
         confirmCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         returnPanel.add(confirmCodeField, gbc);
 
-        // زمان بازگشت
         gbc.gridx = 0;
         gbc.gridy = 1;
         gbc.anchor = GridBagConstraints.EAST;
@@ -202,7 +195,6 @@ public class MainFrame extends JFrame {
         returnTimePanel.add(nowReturnButton);
         returnPanel.add(returnTimePanel, gbc);
 
-        // دکمه ثبت بازگشت
         gbc.gridx = 1;
         gbc.gridy = 2;
         gbc.anchor = GridBagConstraints.CENTER;
@@ -275,8 +267,10 @@ public class MainFrame extends JFrame {
     public void loadEmployees() {
         employeeCombo.removeAllItems();
         try {
-            for (String emp : db.getAvailableEmployees()) {
-                employeeCombo.addItem(emp.substring(emp.indexOf(" - ") + 2));
+            List<Employee> employees = db.getAvailableEmployees();
+            for (Employee emp : employees) {
+                // Format: "Name (deviceUserId)" — deviceUserId is parsed on pickup
+                employeeCombo.addItem(emp.getName() + " (" + emp.getDeviceUserId() + ")");
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
@@ -291,14 +285,25 @@ public class MainFrame extends JFrame {
 
     private void pickupCar() {
         try {
+            if (employeeCombo.getSelectedItem() == null || carCombo.getSelectedItem() == null) {
+                JOptionPane.showMessageDialog(null, "ماشین و کارمند را انتخاب کنید!");
+                return;
+            }
+
             int confirmCode = generateConfirmCode();
             while (db.isCCDuplicated(confirmCode)) {
                 confirmCode = generateConfirmCode();
-                // اگر کد تایید تکراری بود، کد جدید تولید میشه
             }
 
-            String[] selectedEmp = ((String) Objects.requireNonNull(employeeCombo.getSelectedItem())).split(" - ");
-            String empPhone = selectedEmp[1];
+            // Parse deviceUserId from "Name (deviceUserId)"
+            String empItem = (String) employeeCombo.getSelectedItem();
+            int open = empItem.lastIndexOf('(');
+            int close = empItem.lastIndexOf(')');
+            if (open < 0 || close < 0 || close <= open) {
+                JOptionPane.showMessageDialog(null, "فرمت کارمند نامعتبر است!");
+                return;
+            }
+            String deviceUserId = empItem.substring(open + 1, close).trim();
 
             String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
             String carPlate = selectedCar[2];
@@ -311,7 +316,7 @@ public class MainFrame extends JFrame {
                 return;
             }
 
-            db.insertRental(empPhone, carPlate, pickupTime, destination, confirmCode);
+            db.insertRental(deviceUserId, carPlate, pickupTime, destination, confirmCode);
 
             JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + confirmCode);
             loadEmployees();
@@ -343,8 +348,7 @@ public class MainFrame extends JFrame {
         }
 
         try {
-            // گرفتن اطلاعات رکورد قبل از ثبت بازگشت
-            RentalRecord record = db.getRentalRecord(confirmCode); // باید این متد رو توی DatabaseManager داشته باشی
+            RentalRecord record = db.getRentalRecord(confirmCode);
             if (record == null) {
                 JOptionPane.showMessageDialog(null, "کد تحویل وجود ندارد!");
                 return;
@@ -369,7 +373,6 @@ public class MainFrame extends JFrame {
         }
     }
 
-
     private static String getDate() {
         LocalDateTime now = LocalDateTime.now();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -389,17 +392,6 @@ public class MainFrame extends JFrame {
     }
 
     static class DateConverter {
-
-        /**
-         * Gregorian & Jalali (Hijri_Shams,Solar) Date Converter Functions
-         * Author: JDF.SCR.IR =>> Download Full Version :  <a href="http://jdf.scr.ir/jdf">...</a>
-         * License: GNU/LGPL _ Open Source & Free :: Version: 2.80 : [2020=1399]
-         * ---------------------------------------------------------------------
-         * 355746=361590-5844 & 361590=(30*33*365)+(30*8) & 5844=(16*365)+(16/4)
-         * 355666=355746-79-1 & 355668=355746-79+1 &  1595=605+990 &  605=621-16
-         * 990=30*33 & 12053=(365*33)+(32/4) & 36524=(365*100)+(100/4)-(100/100)
-         * 1461=(365*4)+(4/4) & 146097=(365*400)+(400/4)-(400/100)+(400/400)
-         */
 
         public static int[] gregorian_to_jalali(int gy, int gm, int gd) {
             int[] out = {
