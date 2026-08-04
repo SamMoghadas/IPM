@@ -3,214 +3,195 @@ package com.car.rental.ui.frames;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.service.FingerprintException;
+import com.car.rental.service.FingerprintService;
+import com.car.rental.service.VerificationResult;
+import com.car.rental.service.ZkFingerprintService;
 
 import javax.swing.*;
 import java.awt.*;
-import java.sql.*;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.Objects;
-import java.util.Random;
 import java.util.logging.Logger;
 
 public class MainFrame extends JFrame {
-    private final DatabaseManager db;
-    private JComboBox<String> carCombo;
-    private JComboBox<String> employeeCombo;
-    private JTextField pickupTimeField, destinationField;
-    private JTextField confirmCodeField, returnTimeField;
+
+    private static final int FP_TIMEOUT_SECONDS = 40;
     private static final Logger logger = Logger.getLogger(MainFrame.class.getName());
+
+    private final DatabaseManager db;
+    private final FingerprintService fingerprintService;
+
+    // --- Pickup UI ---
+    private JComboBox<String> carCombo;
+    private JTextField destinationField;
+    private JLabel pickupStatusLabel;
+    private JButton pickupAuthButton;
+    private JButton pickupCancelButton;
+    private JButton pickupConfirmButton;
+
+    // --- Return UI ---
+    private JLabel returnStatusLabel;
+    private JButton returnAuthButton;
+    private JButton returnCancelButton;
+    private JButton returnConfirmButton;
+
+    // --- Verified state (pickup) ---
+    private String pickupDeviceUserId;
+    private LocalDateTime pickupDeviceTime;
+    private Employee pickupEmployee;
+
+    // --- Verified state (return) ---
+    private String returnDeviceUserId;
+    private LocalDateTime returnDeviceTime;
+    private RentalRecord returnActiveRental;
 
     public MainFrame() {
         db = new DatabaseManager();
         db.initDatabase();
+        fingerprintService = new ZkFingerprintService("192.168.1.200", 4370);
         createMainUI();
+
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                try {
+                    fingerprintService.cancelListen();
+                    fingerprintService.disconnect();
+                } catch (Exception ignored) {
+                }
+            }
+        });
     }
 
     private void createMainUI() {
         setTitle("سیستم مدیریت ماشین شرکت");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(600, 500);
+        setSize(640, 560);
         setLayout(new BorderLayout(10, 10));
-        getContentPane().setBackground(new Color(245, 245, 250));
         applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         getContentPane().setBackground(Color.WHITE);
-
-        JPanel pickupPanel = createPickupPanel();
-        JPanel returnPanel = createReturnPanel();
-        JPanel buttonsPanel = createButtonsPanel();
 
         JPanel mainPanel = new JPanel(new GridLayout(2, 1, 10, 10));
         mainPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         mainPanel.setBackground(Color.WHITE);
-        mainPanel.add(pickupPanel);
-        mainPanel.add(returnPanel);
+        mainPanel.add(createPickupPanel());
+        mainPanel.add(createReturnPanel());
 
         add(mainPanel, BorderLayout.CENTER);
-        add(buttonsPanel, BorderLayout.SOUTH);
+        add(createButtonsPanel(), BorderLayout.SOUTH);
 
         setLocationRelativeTo(null);
         setVisible(true);
     }
 
+    // ==================== Pickup panel ====================
+
     private JPanel createPickupPanel() {
-        JPanel pickupPanel = new JPanel(new GridBagLayout());
-        pickupPanel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
-        pickupPanel.setBackground(Color.WHITE);
-        pickupPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
+        panel.setBackground(Color.WHITE);
+        panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 15, 5, 5);
+        gbc.insets = new Insets(5, 12, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        DefaultListCellRenderer renderer = new DefaultListCellRenderer();
 
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel carLabel = new JLabel("ماشین:");
-        carLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(carLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
+        int row = 0;
+
+        // Car
+        gbc.gridx = 0; gbc.gridy = row; gbc.anchor = GridBagConstraints.EAST;
+        panel.add(label("ماشین:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
         carCombo = new JComboBox<>();
         carCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         carCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        carCombo.setRenderer(renderer);
         loadCars();
-        pickupPanel.add(carCombo, gbc);
+        panel.add(carCombo, gbc);
+        row++;
 
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel employeeLabel = new JLabel("کارمند:");
-        employeeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(employeeLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        employeeCombo = new JComboBox<>();
-        employeeCombo.setFont(new Font("Arial", Font.PLAIN, 14));
-        employeeCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        employeeCombo.setRenderer(renderer);
-        loadEmployees();
-        pickupPanel.add(employeeCombo, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel pickupTimeLabel = new JLabel("زمان تحویل:");
-        pickupTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(pickupTimeLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        JPanel pickupTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        pickupTimePanel.setBackground(Color.WHITE);
-        pickupTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        pickupTimeField = new JTextField(15);
-        pickupTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        pickupTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        JButton nowPickupButton = new JButton("الان");
-        nowPickupButton.setBackground(new Color(230, 230, 230));
-        nowPickupButton.setFont(new Font("Arial", Font.PLAIN, 12));
-        nowPickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        nowPickupButton.addActionListener(e -> pickupTimeField.setText(getDate()));
-        pickupTimePanel.add(pickupTimeField);
-        pickupTimePanel.add(nowPickupButton);
-        pickupPanel.add(pickupTimePanel, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel destinationLabel = new JLabel("مقصد:");
-        destinationLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupPanel.add(destinationLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        destinationField = new JTextField(15);
+        // Destination
+        gbc.gridx = 0; gbc.gridy = row; gbc.anchor = GridBagConstraints.EAST;
+        panel.add(label("مقصد:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        destinationField = new JTextField(18);
         destinationField.setFont(new Font("Arial", Font.PLAIN, 14));
         destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        pickupPanel.add(destinationField, gbc);
+        panel.add(destinationField, gbc);
+        row++;
 
-        gbc.gridx = 1;
-        gbc.gridy = 4;
-        gbc.anchor = GridBagConstraints.CENTER;
-        JButton pickupButton = new JButton("ثبت تحویل");
-        pickupButton.setFont(new Font("Arial", Font.BOLD, 14));
-        pickupButton.setBackground(new Color(0, 120, 215));
-        pickupButton.setForeground(Color.WHITE);
-        pickupButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        pickupButton.addActionListener(e -> {
-            pickupCar();
-            pickupTimeField.setText("");
-            destinationField.setText("");
-        });
-        pickupPanel.add(pickupButton, gbc);
+        // Status
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        pickupStatusLabel = new JLabel(" ");
+        pickupStatusLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+        pickupStatusLabel.setForeground(new Color(80, 80, 80));
+        panel.add(pickupStatusLabel, gbc);
+        gbc.gridwidth = 1;
+        row++;
 
-        return pickupPanel;
+        // Buttons
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+        btns.setBackground(Color.WHITE);
+
+        pickupAuthButton = actionButton("احراز هویت با اثر انگشت", new Color(0, 120, 215));
+        pickupCancelButton = actionButton("انصراف", Color.GRAY);
+        pickupCancelButton.setEnabled(false);
+        pickupConfirmButton = actionButton("ثبت تحویل", new Color(34, 139, 34));
+        pickupConfirmButton.setEnabled(false);
+
+        pickupAuthButton.addActionListener(e -> startPickupAuth());
+        pickupCancelButton.addActionListener(e -> cancelPickupAuth());
+        pickupConfirmButton.addActionListener(e -> confirmPickup());
+
+        btns.add(pickupAuthButton);
+        btns.add(pickupCancelButton);
+        btns.add(pickupConfirmButton);
+        panel.add(btns, gbc);
+
+        return panel;
     }
 
+    // ==================== Return panel ====================
+
     private JPanel createReturnPanel() {
-        JPanel returnPanel = new JPanel(new GridBagLayout());
-        returnPanel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
-        returnPanel.setBackground(Color.WHITE);
-        returnPanel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("ثبت بازگشت ماشین"));
+        panel.setBackground(Color.WHITE);
+        panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 15, 5, 5);
+        gbc.insets = new Insets(5, 12, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel confirmCodeLabel = new JLabel("کد تحویل:");
-        confirmCodeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        returnPanel.add(confirmCodeLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        confirmCodeField = new JTextField(15);
-        confirmCodeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        confirmCodeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        returnPanel.add(confirmCodeField, gbc);
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        returnStatusLabel = new JLabel("برای بازگشت، اثر انگشت کارمند را احراز کنید");
+        returnStatusLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+        returnStatusLabel.setForeground(new Color(80, 80, 80));
+        panel.add(returnStatusLabel, gbc);
 
-        gbc.gridx = 0;
         gbc.gridy = 1;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel returnTimeLabel = new JLabel("زمان بازگشت:");
-        returnTimeLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        returnPanel.add(returnTimeLabel, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        JPanel returnTimePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        returnTimePanel.setBackground(Color.WHITE);
-        returnTimePanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        returnTimeField = new JTextField(15);
-        returnTimeField.setFont(new Font("Arial", Font.PLAIN, 14));
-        returnTimeField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        JButton nowReturnButton = new JButton("الان");
-        nowReturnButton.setBackground(new Color(230, 230, 230));
-        nowReturnButton.setFont(new Font("Arial", Font.PLAIN, 12));
-        nowReturnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        nowReturnButton.addActionListener(e -> returnTimeField.setText(getDate()));
-        returnTimePanel.add(returnTimeField);
-        returnTimePanel.add(nowReturnButton);
-        returnPanel.add(returnTimePanel, gbc);
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+        btns.setBackground(Color.WHITE);
 
-        gbc.gridx = 1;
-        gbc.gridy = 2;
-        gbc.anchor = GridBagConstraints.CENTER;
-        JButton returnButton = new JButton("ثبت بازگشت");
-        returnButton.setFont(new Font("Arial", Font.BOLD, 14));
-        returnButton.setBackground(new Color(0, 120, 215));
-        returnButton.setForeground(Color.WHITE);
-        returnButton.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        returnButton.addActionListener(e -> {
-            returnCar();
-            confirmCodeField.setText("");
-            returnTimeField.setText("");
-        });
-        returnPanel.add(returnButton, gbc);
+        returnAuthButton = actionButton("احراز هویت با اثر انگشت", new Color(0, 120, 215));
+        returnCancelButton = actionButton("انصراف", Color.GRAY);
+        returnCancelButton.setEnabled(false);
+        returnConfirmButton = actionButton("ثبت بازگشت", new Color(34, 139, 34));
+        returnConfirmButton.setEnabled(false);
 
-        return returnPanel;
+        returnAuthButton.addActionListener(e -> startReturnAuth());
+        returnCancelButton.addActionListener(e -> cancelReturnAuth());
+        returnConfirmButton.addActionListener(e -> confirmReturn());
+
+        btns.add(returnAuthButton);
+        btns.add(returnCancelButton);
+        btns.add(returnConfirmButton);
+        panel.add(btns, gbc);
+
+        return panel;
     }
 
     private JPanel createButtonsPanel() {
@@ -218,28 +199,19 @@ public class MainFrame extends JFrame {
         buttonsPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         buttonsPanel.setBackground(Color.WHITE);
 
-        JButton addItemsButton = new JButton("اضافه کردن ماشین / کارمند");
-        addItemsButton.setFont(new Font("Arial", Font.BOLD, 14));
-        addItemsButton.setBackground(new Color(34, 139, 34));
-        addItemsButton.setForeground(Color.WHITE);
+        JButton addItemsButton = actionButton("اضافه کردن ماشین / کارمند", new Color(34, 139, 34));
         addItemsButton.addActionListener(e -> {
             dispose();
             new AddFrame();
         });
 
-        JButton manageButton = new JButton("مدیریت ماشین‌ها و کارمندها");
-        manageButton.setFont(new Font("Arial", Font.BOLD, 14));
-        manageButton.setBackground(new Color(55, 65, 81));
-        manageButton.setForeground(Color.WHITE);
+        JButton manageButton = actionButton("مدیریت ماشین‌ها و کارمندها", new Color(55, 65, 81));
         manageButton.addActionListener(e -> {
             dispose();
             new ManageFrame();
         });
 
-        JButton reportButton = new JButton("نمایش گزارش");
-        reportButton.setFont(new Font("Arial", Font.BOLD, 14));
-        reportButton.setBackground(new Color(139, 69, 19));
-        reportButton.setForeground(Color.WHITE);
+        JButton reportButton = actionButton("نمایش گزارش", new Color(139, 69, 19));
         reportButton.addActionListener(e -> {
             dispose();
             new ReportFrame();
@@ -248,8 +220,268 @@ public class MainFrame extends JFrame {
         buttonsPanel.add(reportButton);
         buttonsPanel.add(manageButton);
         buttonsPanel.add(addItemsButton);
-
         return buttonsPanel;
+    }
+
+    // ==================== Pickup auth flow ====================
+
+    private void startPickupAuth() {
+        if (carCombo.getSelectedItem() == null) {
+            JOptionPane.showMessageDialog(this, "ابتدا ماشین را انتخاب کنید!");
+            return;
+        }
+        String dest = destinationField.getText().strip();
+        if (dest.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "مقصد را وارد کنید!");
+            return;
+        }
+
+        resetPickupVerifiedState();
+        setPickupListeningUi(true);
+        pickupStatusLabel.setText("در انتظار اثر انگشت... انگشت را روی دستگاه بگذارید");
+        pickupStatusLabel.setForeground(new Color(180, 120, 0));
+
+        ensureFingerprintConnected();
+
+        fingerprintService.listenForVerification(
+                FP_TIMEOUT_SECONDS,
+                result -> SwingUtilities.invokeLater(() -> onPickupVerified(result)),
+                () -> SwingUtilities.invokeLater(this::onPickupTimeout),
+                err -> SwingUtilities.invokeLater(() -> onPickupError(err))
+        );
+    }
+
+    private void onPickupVerified(VerificationResult result) {
+        try {
+            Employee emp = db.findByDeviceUserId(result.getDeviceUserId());
+            if (emp == null) {
+                pickupStatusLabel.setText("کارمند با شناسه " + result.getDeviceUserId() + " در سیستم ثبت نشده است");
+                pickupStatusLabel.setForeground(Color.RED);
+                setPickupListeningUi(false);
+                return;
+            }
+            if (emp.isRenting()) {
+                pickupStatusLabel.setText(emp.getName() + " در حال حاضر در مأموریت است");
+                pickupStatusLabel.setForeground(Color.RED);
+                setPickupListeningUi(false);
+                return;
+            }
+
+            pickupDeviceUserId = result.getDeviceUserId();
+            pickupDeviceTime = result.getDeviceTime();
+            pickupEmployee = emp;
+
+            pickupStatusLabel.setText("تأیید شد: " + emp.getName()
+                    + " | زمان دستگاه: " + formatDeviceTime(pickupDeviceTime));
+            pickupStatusLabel.setForeground(new Color(0, 128, 0));
+            setPickupListeningUi(false);
+            pickupConfirmButton.setEnabled(true);
+        } catch (SQLException e) {
+            onPickupError(new FingerprintException(e.getMessage(), e));
+        }
+    }
+
+    private void onPickupTimeout() {
+        pickupStatusLabel.setText("زمان احراز هویت تمام شد. دوباره تلاش کنید.");
+        pickupStatusLabel.setForeground(Color.RED);
+        setPickupListeningUi(false);
+    }
+
+    private void onPickupError(FingerprintException err) {
+        logger.severe("Pickup FP error: " + err.getMessage());
+        pickupStatusLabel.setText("خطا: " + err.getMessage());
+        pickupStatusLabel.setForeground(Color.RED);
+        setPickupListeningUi(false);
+    }
+
+    private void cancelPickupAuth() {
+        fingerprintService.cancelListen();
+        resetPickupVerifiedState();
+        pickupStatusLabel.setText("احراز هویت لغو شد");
+        pickupStatusLabel.setForeground(new Color(80, 80, 80));
+        setPickupListeningUi(false);
+    }
+
+    private void confirmPickup() {
+        if (pickupDeviceUserId == null || pickupEmployee == null || pickupDeviceTime == null) {
+            JOptionPane.showMessageDialog(this, "ابتدا احراز هویت را انجام دهید!");
+            return;
+        }
+        if (carCombo.getSelectedItem() == null) {
+            JOptionPane.showMessageDialog(this, "ماشین را انتخاب کنید!");
+            return;
+        }
+        String dest = destinationField.getText().strip();
+        if (dest.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "مقصد را وارد کنید!");
+            return;
+        }
+
+        try {
+            String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
+            String carPlate = selectedCar[2];
+            String pickupTime = formatDeviceTime(pickupDeviceTime);
+
+            db.insertRental(pickupDeviceUserId, carPlate, pickupTime, dest);
+
+            JOptionPane.showMessageDialog(this,
+                    "ماشین تحویل داده شد ✅\n" +
+                            "کارمند: " + pickupEmployee.getName() + "\n" +
+                            "زمان: " + pickupTime);
+
+            destinationField.setText("");
+            resetPickupVerifiedState();
+            pickupStatusLabel.setText(" ");
+            pickupConfirmButton.setEnabled(false);
+            loadCars();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "خطا در ثبت تحویل: " + e.getMessage());
+        }
+    }
+
+    private void setPickupListeningUi(boolean listening) {
+        pickupAuthButton.setEnabled(!listening);
+        pickupCancelButton.setEnabled(listening);
+        if (listening) {
+            pickupConfirmButton.setEnabled(false);
+        }
+        carCombo.setEnabled(!listening);
+        destinationField.setEnabled(!listening);
+    }
+
+    private void resetPickupVerifiedState() {
+        pickupDeviceUserId = null;
+        pickupDeviceTime = null;
+        pickupEmployee = null;
+        pickupConfirmButton.setEnabled(false);
+    }
+
+    // ==================== Return auth flow ====================
+
+    private void startReturnAuth() {
+        resetReturnVerifiedState();
+        setReturnListeningUi(true);
+        returnStatusLabel.setText("در انتظار اثر انگشت... انگشت را روی دستگاه بگذارید");
+        returnStatusLabel.setForeground(new Color(180, 120, 0));
+
+        ensureFingerprintConnected();
+
+        fingerprintService.listenForVerification(
+                FP_TIMEOUT_SECONDS,
+                result -> SwingUtilities.invokeLater(() -> onReturnVerified(result)),
+                () -> SwingUtilities.invokeLater(this::onReturnTimeout),
+                err -> SwingUtilities.invokeLater(() -> onReturnError(err))
+        );
+    }
+
+    private void onReturnVerified(VerificationResult result) {
+        try {
+            Employee emp = db.findByDeviceUserId(result.getDeviceUserId());
+            if (emp == null) {
+                returnStatusLabel.setText("کارمند با شناسه " + result.getDeviceUserId() + " در سیستم ثبت نشده است");
+                returnStatusLabel.setForeground(Color.RED);
+                setReturnListeningUi(false);
+                return;
+            }
+
+            RentalRecord active = db.getActiveRentalByDeviceUserId(result.getDeviceUserId());
+            if (active == null) {
+                returnStatusLabel.setText(emp.getName() + " اجاره فعالی ندارد");
+                returnStatusLabel.setForeground(Color.RED);
+                setReturnListeningUi(false);
+                return;
+            }
+
+            returnDeviceUserId = result.getDeviceUserId();
+            returnDeviceTime = result.getDeviceTime();
+            returnActiveRental = active;
+
+            returnStatusLabel.setText("تأیید شد: " + emp.getName()
+                    + " | ماشین: " + active.carName + " (" + active.plate + ")"
+                    + " | زمان: " + formatDeviceTime(returnDeviceTime));
+            returnStatusLabel.setForeground(new Color(0, 128, 0));
+            setReturnListeningUi(false);
+            returnConfirmButton.setEnabled(true);
+        } catch (SQLException e) {
+            onReturnError(new FingerprintException(e.getMessage(), e));
+        }
+    }
+
+    private void onReturnTimeout() {
+        returnStatusLabel.setText("زمان احراز هویت تمام شد. دوباره تلاش کنید.");
+        returnStatusLabel.setForeground(Color.RED);
+        setReturnListeningUi(false);
+    }
+
+    private void onReturnError(FingerprintException err) {
+        logger.severe("Return FP error: " + err.getMessage());
+        returnStatusLabel.setText("خطا: " + err.getMessage());
+        returnStatusLabel.setForeground(Color.RED);
+        setReturnListeningUi(false);
+    }
+
+    private void cancelReturnAuth() {
+        fingerprintService.cancelListen();
+        resetReturnVerifiedState();
+        returnStatusLabel.setText("احراز هویت لغو شد");
+        returnStatusLabel.setForeground(new Color(80, 80, 80));
+        setReturnListeningUi(false);
+    }
+
+    private void confirmReturn() {
+        if (returnDeviceUserId == null || returnDeviceTime == null || returnActiveRental == null) {
+            JOptionPane.showMessageDialog(this, "ابتدا احراز هویت را انجام دهید!");
+            return;
+        }
+
+        try {
+            String returnTime = formatDeviceTime(returnDeviceTime);
+            boolean ok = db.returnCarByDeviceUserId(returnDeviceUserId, returnTime);
+            if (ok) {
+                JOptionPane.showMessageDialog(this,
+                        "بازگشت ثبت شد ✅\n" +
+                                "کارمند: " + returnActiveRental.employeeName + "\n" +
+                                "ماشین: " + returnActiveRental.carName + "\n" +
+                                "زمان: " + returnTime);
+                loadCars();
+            } else {
+                JOptionPane.showMessageDialog(this, "اجاره فعالی برای ثبت بازگشت یافت نشد!");
+            }
+            resetReturnVerifiedState();
+            returnStatusLabel.setText("برای بازگشت، اثر انگشت کارمند را احراز کنید");
+            returnStatusLabel.setForeground(new Color(80, 80, 80));
+            returnConfirmButton.setEnabled(false);
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "خطا در ثبت بازگشت: " + e.getMessage());
+        }
+    }
+
+    private void setReturnListeningUi(boolean listening) {
+        returnAuthButton.setEnabled(!listening);
+        returnCancelButton.setEnabled(listening);
+        if (listening) {
+            returnConfirmButton.setEnabled(false);
+        }
+    }
+
+    private void resetReturnVerifiedState() {
+        returnDeviceUserId = null;
+        returnDeviceTime = null;
+        returnActiveRental = null;
+        returnConfirmButton.setEnabled(false);
+    }
+
+    // ==================== Helpers ====================
+
+    private void ensureFingerprintConnected() {
+        try {
+            if (!fingerprintService.isConnected()) {
+                fingerprintService.connect();
+            }
+        } catch (FingerprintException e) {
+            JOptionPane.showMessageDialog(this, "اتصال به دستگاه اثر انگشت ناموفق بود:\n" + e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 
     public void loadCars() {
@@ -260,165 +492,31 @@ public class MainFrame extends JFrame {
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
-            JOptionPane.showMessageDialog(null, "خطا در خواندن ماشین‌ها: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "خطا در خواندن ماشین‌ها: " + e.getMessage());
         }
     }
 
-    public void loadEmployees() {
-        employeeCombo.removeAllItems();
-        try {
-            List<Employee> employees = db.getAvailableEmployees();
-            for (Employee emp : employees) {
-                // Format: "Name (deviceUserId)" — deviceUserId is parsed on pickup
-                employeeCombo.addItem(emp.getName() + " (" + emp.getDeviceUserId() + ")");
-            }
-        } catch (SQLException e) {
-            logger.severe("خطا در خواندن کارمندها: " + e.getMessage());
-            JOptionPane.showMessageDialog(null, "خطا در خواندن کارمندها: " + e.getMessage());
-        }
+    private static String formatDeviceTime(LocalDateTime time) {
+        if (time == null) return "";
+        return time.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 
-    private int generateConfirmCode() {
-        Random rand = new Random();
-        return 10000 + rand.nextInt(90000);
+    private static JLabel label(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("Arial", Font.BOLD, 14));
+        return l;
     }
 
-    private void pickupCar() {
-        try {
-            if (employeeCombo.getSelectedItem() == null || carCombo.getSelectedItem() == null) {
-                JOptionPane.showMessageDialog(null, "ماشین و کارمند را انتخاب کنید!");
-                return;
-            }
-
-            int confirmCode = generateConfirmCode();
-            while (db.isCCDuplicated(confirmCode)) {
-                confirmCode = generateConfirmCode();
-            }
-
-            // Parse deviceUserId from "Name (deviceUserId)"
-            String empItem = (String) employeeCombo.getSelectedItem();
-            int open = empItem.lastIndexOf('(');
-            int close = empItem.lastIndexOf(')');
-            if (open < 0 || close < 0 || close <= open) {
-                JOptionPane.showMessageDialog(null, "فرمت کارمند نامعتبر است!");
-                return;
-            }
-            String deviceUserId = empItem.substring(open + 1, close).trim();
-
-            String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
-            String carPlate = selectedCar[2];
-
-            String pickupTime = pickupTimeField.getText().strip();
-            String destination = destinationField.getText().strip();
-
-            if (pickupTime.isEmpty() || destination.isEmpty()) {
-                JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
-                return;
-            }
-
-            db.insertRental(deviceUserId, carPlate, pickupTime, destination, confirmCode);
-
-            JOptionPane.showMessageDialog(null, "ماشین تحویل داده شد ✅ \nکد تحویل: " + confirmCode);
-            loadEmployees();
-            loadCars();
-
-            pickupTimeField.setText("");
-            destinationField.setText("");
-
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
-        }
-    }
-
-    private void returnCar() {
-        String returnTime = returnTimeField.getText().strip();
-        String confirmCodeText = confirmCodeField.getText().strip();
-
-        if (returnTime.isEmpty() || confirmCodeText.isEmpty()) {
-            JOptionPane.showMessageDialog(null, "تمام فیلدها باید پر شوند!");
-            return;
-        }
-
-        int confirmCode;
-        try {
-            confirmCode = Integer.parseInt(confirmCodeText);
-        } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(null, "کد تحویل معتبر نیست!");
-            return;
-        }
-
-        try {
-            RentalRecord record = db.getRentalRecord(confirmCode);
-            if (record == null) {
-                JOptionPane.showMessageDialog(null, "کد تحویل وجود ندارد!");
-                return;
-            }
-
-            boolean success = db.returnCar(confirmCode, returnTime);
-            if (success) {
-                JOptionPane.showMessageDialog(null,
-                        "ماشین '" + record.carName + "' توسط کارمند '" + record.employeeName + "' برگشت داده شد ✅"
-                );
-                loadEmployees();
-                loadCars();
-            } else {
-                JOptionPane.showMessageDialog(null, "قبلاً بازگشت ثبت شده است!");
-            }
-
-            returnTimeField.setText("");
-            confirmCodeField.setText("");
-
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "خطا: " + e.getMessage());
-        }
-    }
-
-    private static String getDate() {
-        LocalDateTime now = LocalDateTime.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-        String[] date_time = now.format(formatter).split(" ");
-        String[] date = date_time[0].split("-");
-        int[] shams_date = DateConverter.gregorian_to_jalali(
-                Integer.parseInt(date[0]), Integer.parseInt(date[1]), Integer.parseInt(date[2]));
-
-        return shams_date[0] + "/" +
-                ((shams_date[1] < 10) ? "0" + shams_date[1] : shams_date[1]) + "/" +
-                ((shams_date[2] < 10) ? "0" + shams_date[2] : shams_date[2]) +
-                " " + date_time[1];
+    private static JButton actionButton(String text, Color bg) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("Arial", Font.BOLD, 13));
+        b.setBackground(bg);
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        return b;
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(MainFrame::new);
-    }
-
-    static class DateConverter {
-
-        public static int[] gregorian_to_jalali(int gy, int gm, int gd) {
-            int[] out = {
-                    (gm > 2) ? (gy + 1) : gy,
-                    0,
-                    0
-            };
-            {
-                int[] g_d_m = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-                out[2] = 355666 + (365 * gy) + (((out[0] + 3) / 4)) - (((out[0] + 99) / 100)) + (((out[0] + 399) / 400)) + gd + g_d_m[gm - 1];
-            }
-            out[0] = -1595 + (33 * ((out[2] / 12053)));
-            out[2] %= 12053;
-            out[0] += 4 * ((out[2] / 1461));
-            out[2] %= 1461;
-            if (out[2] > 365) {
-                out[0] += ((out[2] - 1) / 365);
-                out[2] = (out[2] - 1) % 365;
-            }
-            if (out[2] < 186) {
-                out[1] = 1 + (out[2] / 31);
-                out[2] = 1 + (out[2] % 31);
-            } else {
-                out[1] = 7 + ((out[2] - 186) / 30);
-                out[2] = 1 + ((out[2] - 186) % 30);
-            }
-            return out;
-        }
     }
 }
