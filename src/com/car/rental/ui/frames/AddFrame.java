@@ -66,7 +66,6 @@ public class AddFrame extends JFrame {
         addFormRow(employeeFormPanel, "شماره پرسنلی:", personnelIdField);
         addFormRow(employeeFormPanel, "نام و نام خانوادگی:", nameField);
         addFormRow(employeeFormPanel, "شماره تماس:", phoneField);
-        addFormRow(employeeFormPanel, "آیدی تلگرام:", telIdField);
         addFormRow(employeeFormPanel, "", addEmployeeButton);
 
         add(employeeFormPanel);

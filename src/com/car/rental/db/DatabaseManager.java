@@ -207,7 +207,7 @@ public class DatabaseManager {
         return cars;
     }
 
-    // --- لیست همه ماشین ها ---
+// لیست ماشینا
     public List<String> getAllCars() throws SQLException {
         List<String> cars = new ArrayList<>();
         String sql = "SELECT name, color, plate, is_rented FROM CarTable WHERE is_deleted = 0";
