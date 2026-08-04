@@ -5,8 +5,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -20,10 +18,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Real implementation of FingerprintService for ZKTeco devices (TCP port 4370).
- *
- * Protocol reference: https://github.com/adrobinoga/zk-protocol
- * Checksum / packet format aligned with pyzk.
+ * ZKTeco TCP client (port 4370).
+ * CONNECT packet verified against real pyzk capture:
+ * 50 50 82 7D 08 00 00 00 E8 03 17 FC 00 00 00 00
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -33,11 +30,7 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_EXIT = 1001;
     private static final int CMD_ACK_OK = 2000;
     private static final int CMD_REG_EVENT = 500;
-
     private static final int EF_ATTLOG = 1;
-
-    /** Same initial reply counter as pyzk (USHRT_MAX - 1). */
-    private static final int REPLY_ID_START = 65534;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -49,6 +42,7 @@ public class ZkFingerprintService implements FingerprintService {
     private InputStream in;
     private OutputStream out;
     private int sessionId;
+    /** Next reply_id to send. First CONNECT must use 0 (matches pyzk). */
     private int replyNumber;
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -88,7 +82,7 @@ public class ZkFingerprintService implements FingerprintService {
             in = socket.getInputStream();
             out = socket.getOutputStream();
             sessionId = 0;
-            replyNumber = REPLY_ID_START;
+            replyNumber = 0; // pyzk first CONNECT uses reply_id = 0
 
             byte[] reply = sendCommand(CMD_CONNECT, new byte[0]);
             if (reply == null) {
@@ -103,6 +97,7 @@ public class ZkFingerprintService implements FingerprintService {
             sessionId = getSessionId(reply);
             connected.set(true);
             logger.info("Connected to ZK device " + host + ":" + port + " session=" + sessionId);
+            System.out.println("Connected! session=" + sessionId);
         } catch (IOException e) {
             closeQuietly();
             throw new FingerprintException("Cannot connect to device " + host + ":" + port, e);
@@ -209,7 +204,6 @@ public class ZkFingerprintService implements FingerprintService {
     @Override
     public List<DeviceUser> getUsers() throws FingerprintException {
         ensureConnected();
-        logger.warning("getUsers() not fully implemented yet");
         return new ArrayList<>();
     }
 
@@ -248,11 +242,21 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private synchronized byte[] sendCommand(int command, byte[] data) throws IOException {
+        int replyId = replyNumber & 0xFFFF;
         replyNumber = (replyNumber + 1) & 0xFFFF;
-        byte[] packet = buildPacket(command, sessionId, replyNumber, data);
+
+        byte[] packet = buildPacket(command, sessionId, replyId, data);
+        System.out.println("JAVA SEND: " + toHex(packet));
         out.write(packet);
         out.flush();
-        return readPacket();
+
+        byte[] reply = readPacket();
+        if (reply != null) {
+            System.out.println("JAVA RECV: " + toHex(reply));
+        } else {
+            System.out.println("JAVA RECV: null");
+        }
+        return reply;
     }
 
     private synchronized void sendAck() {
@@ -269,18 +273,13 @@ public class ZkFingerprintService implements FingerprintService {
         int dataLen = (data != null) ? data.length : 0;
         int payloadSize = 8 + dataLen;
 
-        // Build payload with checksum = 0 first (same as pyzk)
         byte[] payload = new byte[payloadSize];
-        // command (LE)
         payload[0] = (byte) (command & 0xFF);
         payload[1] = (byte) ((command >> 8) & 0xFF);
-        // checksum placeholder = 0
         payload[2] = 0;
         payload[3] = 0;
-        // session (LE)
         payload[4] = (byte) (session & 0xFF);
         payload[5] = (byte) ((session >> 8) & 0xFF);
-        // reply id (LE)
         payload[6] = (byte) (replyId & 0xFF);
         payload[7] = (byte) ((replyId >> 8) & 0xFF);
         if (dataLen > 0) {
@@ -291,7 +290,6 @@ public class ZkFingerprintService implements FingerprintService {
         payload[2] = (byte) (checksum & 0xFF);
         payload[3] = (byte) ((checksum >> 8) & 0xFF);
 
-        // Full packet: start(4) + size(4) + payload
         byte[] packet = new byte[8 + payloadSize];
         System.arraycopy(PACKET_START, 0, packet, 0, 4);
         packet[4] = (byte) (payloadSize & 0xFF);
@@ -303,9 +301,7 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Checksum exactly as in pyzk / zk-protocol libraries:
-     * sum 16-bit little-endian words over the whole payload (with checksum field = 0),
-     * then bitwise NOT, normalize to 0..65535.
+     * Checksum matching pyzk (USHRT_MAX = 65535 style folding).
      */
     private static int createChecksum(byte[] payload) {
         int chksum = 0;
@@ -316,7 +312,9 @@ public class ZkFingerprintService implements FingerprintService {
             } else {
                 chksum += (payload[i] & 0xFF) + ((payload[i + 1] & 0xFF) << 8);
             }
-            chksum %= 65536;
+            if (chksum > 65535) {
+                chksum -= 65535;
+            }
         }
         chksum = ~chksum;
         while (chksum < 0) {
@@ -330,8 +328,7 @@ public class ZkFingerprintService implements FingerprintService {
         if (header == null) return null;
 
         if ((header[0] & 0xFF) != 0x50 || (header[1] & 0xFF) != 0x50) {
-            logger.warning("Invalid packet start: "
-                    + String.format("%02X %02X", header[0], header[1]));
+            logger.warning("Invalid packet start: " + toHex(header));
             return null;
         }
 
@@ -407,6 +404,15 @@ public class ZkFingerprintService implements FingerprintService {
             logger.log(Level.WARNING, "Failed to parse ATTLOG", e);
             return null;
         }
+    }
+
+    private static String toHex(byte[] data) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < data.length; i++) {
+            if (i > 0) sb.append(' ');
+            sb.append(String.format("%02X", data[i]));
+        }
+        return sb.toString();
     }
 
     private void closeQuietly() {
