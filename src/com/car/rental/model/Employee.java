@@ -1,20 +1,49 @@
 package com.car.rental.model;
 
+/**
+ * Employee model linked to ZKTeco device user.
+ * deviceUserId is the User ID defined on the fingerprint device
+ * (the dedicated "second identity" for this software).
+ */
 public class Employee {
-    private final int personnelId;
+    private final int id;              // internal DB primary key
+    private String deviceUserId;       // User ID on ZKTeco device (unique)
     private String name;
     private String phone;
-    private String telegramId;
+    private boolean active;
+    private boolean renting;
 
-    public Employee(int personnelId, String name, String phone, String telegramId) {
-        this.personnelId = personnelId;
+    /** Constructor for creating a new employee (not yet saved). */
+    public Employee(String deviceUserId, String name, String phone) {
+        this.id = 0;
+        this.deviceUserId = deviceUserId;
         this.name = name;
         this.phone = phone;
-        this.telegramId = telegramId;
+        this.active = true;
+        this.renting = false;
     }
 
-    public int getPersonnelId() {
-        return personnelId;
+    /** Full constructor (when loading from database). */
+    public Employee(int id, String deviceUserId, String name, String phone,
+                    boolean active, boolean renting) {
+        this.id = id;
+        this.deviceUserId = deviceUserId;
+        this.name = name;
+        this.phone = phone;
+        this.active = active;
+        this.renting = renting;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public String getDeviceUserId() {
+        return deviceUserId;
+    }
+
+    public void setDeviceUserId(String deviceUserId) {
+        this.deviceUserId = deviceUserId;
     }
 
     public String getName() {
@@ -33,11 +62,24 @@ public class Employee {
         this.phone = phone;
     }
 
-    public String getTelegramId() {
-        return telegramId;
+    public boolean isActive() {
+        return active;
     }
 
-    public void setTelegramId(String telegramId) {
-        this.telegramId = telegramId;
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public boolean isRenting() {
+        return renting;
+    }
+
+    public void setRenting(boolean renting) {
+        this.renting = renting;
+    }
+
+    @Override
+    public String toString() {
+        return name + " (" + deviceUserId + ")";
     }
 }
