@@ -11,7 +11,6 @@ import java.sql.*;
 public class AddFrame extends JFrame {
     public AddFrame() {
 
-        // تنظیمات فریم
         setTitle("اضافه کردن ماشین و کارمند");
         setSize(600, 500);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -19,7 +18,7 @@ public class AddFrame extends JFrame {
         setLayout(new BoxLayout(getContentPane(), BoxLayout.Y_AXIS));
         getContentPane().setBackground(Color.WHITE);
 
-        // ----------------- Header Panel -----------------
+        // Header
         JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
         headerPanel.setBackground(Color.WHITE);
 
@@ -34,16 +33,12 @@ public class AddFrame extends JFrame {
         headerPanel.add(backButton);
         add(headerPanel);
 
-        // ----------------- Car Form Panel -----------------
+        // Car form
         JPanel carFormPanel = createTitledPanel("اضافه کردن ماشین");
 
         JTextField modelField = createField(true);
-
-        // پلاک
         PlateInputPanel plateInputPanel = new PlateInputPanel();
-
         JTextField colorField = createField(true);
-
         JButton addCarButton = createActionButton("اضافه کردن ماشین", new Color(34, 139, 34));
 
         addFormRow(carFormPanel, "نام ماشین:", modelField);
@@ -53,27 +48,25 @@ public class AddFrame extends JFrame {
 
         add(carFormPanel);
 
-        // ----------------- Employee Form Panel -----------------
+        // Employee form
         JPanel employeeFormPanel = createTitledPanel("اضافه کردن کارمند");
 
-        JTextField personnelIdField = createField(false);
+        JTextField deviceUserIdField = createField(false);
         JTextField nameField = createField(true);
         JTextField phoneField = createField(false);
-        JTextField telIdField = createField(false);
 
         JButton addEmployeeButton = createActionButton("اضافه کردن کارمند", new Color(34, 139, 34));
 
-        addFormRow(employeeFormPanel, "شماره پرسنلی:", personnelIdField);
+        addFormRow(employeeFormPanel, "شناسه دستگاه:", deviceUserIdField);
         addFormRow(employeeFormPanel, "نام و نام خانوادگی:", nameField);
         addFormRow(employeeFormPanel, "شماره تماس:", phoneField);
         addFormRow(employeeFormPanel, "", addEmployeeButton);
 
         add(employeeFormPanel);
 
-        // ----------------- Database -----------------
         DatabaseManager db = new DatabaseManager();
 
-        // ----------------- Add Car Logic -----------------
+        // Add car
         addCarButton.addActionListener(e -> {
             String name = modelField.getText().strip();
             String plate = plateInputPanel.getPlate();
@@ -97,39 +90,32 @@ public class AddFrame extends JFrame {
             }
         });
 
-        // ----------------- Add Employee Logic -----------------
+        // Add employee
         addEmployeeButton.addActionListener(e -> {
-            String personnelIdText = personnelIdField.getText().strip();
-            if (personnelIdText.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "شماره پرسنلی را وارد کنید!");
-                return;
-            }
-
-            int personnelId;
-            try {
-                personnelId = Integer.parseInt(personnelIdText);
-            } catch (NumberFormatException nfe) {
-                JOptionPane.showMessageDialog(this, "شماره پرسنلی باید عدد باشد!");
-                return;
-            }
-
+            String deviceUserId = deviceUserIdField.getText().strip();
             String name = nameField.getText().strip();
             String phone = phoneField.getText().strip();
-            String telId = telIdField.getText().strip();
 
-            if (name.isEmpty() || phone.isEmpty() || telId.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "تمام فیلدهای کارمند باید پر شوند!");
+            if (deviceUserId.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "شناسه دستگاه را وارد کنید!");
+                return;
+            }
+            if (name.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "نام را وارد کنید!");
                 return;
             }
 
             try {
-                db.addEmployee(personnelId, name, phone, telId);
+                if (db.isDeviceUserIdExists(deviceUserId)) {
+                    JOptionPane.showMessageDialog(this, "این شناسه دستگاه قبلاً ثبت شده است!");
+                    return;
+                }
+                db.addEmployee(deviceUserId, name, phone.isEmpty() ? null : phone);
                 JOptionPane.showMessageDialog(this, "کارمند با موفقیت اضافه شد!");
 
-                personnelIdField.setText("");
+                deviceUserIdField.setText("");
                 nameField.setText("");
                 phoneField.setText("");
-                telIdField.setText("");
 
             } catch (SQLException ex) {
                 JOptionPane.showMessageDialog(this, "خطا در اضافه کردن کارمند: " + ex.getMessage());
@@ -138,8 +124,6 @@ public class AddFrame extends JFrame {
 
         setVisible(true);
     }
-
-    // ----------------- Helper Methods -----------------
 
     private JPanel createTitledPanel(String title) {
         JPanel panel = new JPanel();
@@ -158,7 +142,7 @@ public class AddFrame extends JFrame {
         row.setBackground(Color.WHITE);
 
         JLabel label = new JLabel(labelText, SwingConstants.RIGHT);
-        label.setPreferredSize(new Dimension(75, 25));
+        label.setPreferredSize(new Dimension(120, 25));
         row.add(field);
         row.add(label);
 
