@@ -17,10 +17,9 @@ public class EditFrame extends JFrame {
     private JTextField carModelField;
     private PlateInputPanel carPlateField;
     private JTextField carColorField;
-    private JTextField personnelIdField;
+    private JTextField deviceUserIdField;
     private JTextField nameField;
     private JTextField phoneField;
-    private JTextField telegramField;
     private JButton saveButton;
     private JButton cancelButton;
     private Car car;
@@ -78,17 +77,15 @@ public class EditFrame extends JFrame {
     }
 
     private void initEmployeeComponents() {
-        personnelIdField = new JTextField();
-        personnelIdField.setEditable(false);
-        personnelIdField.setBackground(new Color(240, 240, 240));
-        personnelIdField.setForeground(Color.GRAY);
+        deviceUserIdField = new JTextField();
+        deviceUserIdField.setEditable(false);
+        deviceUserIdField.setBackground(new Color(240, 240, 240));
+        deviceUserIdField.setForeground(Color.GRAY);
 
         nameField = new JTextField();
         nameField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         phoneField = new JTextField();
-
-        telegramField = new JTextField();
 
         saveButton = new JButton("ذخیره تغییرات");
         saveButton.setBackground(new Color(0, 120, 215));
@@ -138,10 +135,9 @@ public class EditFrame extends JFrame {
 
         int row = 0;
 
-        row = addRow(panel, gbc, row, "شماره پرسنلی:", personnelIdField);
+        row = addRow(panel, gbc, row, "شناسه دستگاه:", deviceUserIdField);
         row = addRow(panel, gbc, row, "نام و نام خانوادگی:", nameField);
-        row = addRow(panel, gbc, row, "شماره تماس:", phoneField);
-        addRow(panel, gbc, row, "آیدی تلگرام:", telegramField);
+        addRow(panel, gbc, row, "شماره تماس:", phoneField);
 
         add(panel, BorderLayout.CENTER);
 
@@ -182,10 +178,9 @@ public class EditFrame extends JFrame {
     }
 
     private void fillEmployeeFields() {
-        personnelIdField.setText(String.valueOf(employee.getPersonnelId()));
+        deviceUserIdField.setText(employee.getDeviceUserId());
         nameField.setText(employee.getName());
-        phoneField.setText(employee.getPhone());
-        telegramField.setText(employee.getTelegramId());
+        phoneField.setText(employee.getPhone() != null ? employee.getPhone() : "");
     }
 
     private int addRow(JPanel panel, GridBagConstraints gbc, int row,
@@ -235,16 +230,14 @@ public class EditFrame extends JFrame {
     private void saveEmployeeChanges() {
         String name = nameField.getText().strip();
         String phone = phoneField.getText().strip();
-        String telegram = telegramField.getText().strip();
 
-        if (name.isEmpty() || phone.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "نام و شماره تماس الزامی است!");
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "نام الزامی است!");
             return;
         }
 
         employee.setName(name);
         employee.setPhone(phone);
-        employee.setTelegramId(telegram);
 
         try {
             DatabaseManager db = new DatabaseManager();
