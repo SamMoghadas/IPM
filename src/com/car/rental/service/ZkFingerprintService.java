@@ -22,30 +22,22 @@ import java.util.logging.Logger;
 /**
  * Real implementation of FingerprintService for ZKTeco devices (TCP port 4370).
  *
- * Currently supports:
- *  - connect / disconnect
- *  - listenForVerification (realtime attendance events)
- *  - basic device session
- *
- * User management (getUsers / createUser / deleteUser / startEnroll) is prepared
- * but not fully implemented yet – will be completed in the next step.
- *
  * Protocol reference: https://github.com/adrobinoga/zk-protocol
+ * Checksum / packet format aligned with pyzk.
  */
 public class ZkFingerprintService implements FingerprintService {
 
     private static final Logger logger = Logger.getLogger(ZkFingerprintService.class.getName());
 
-    // ZK protocol constants
     private static final int CMD_CONNECT = 1000;
     private static final int CMD_EXIT = 1001;
-    private static final int CMD_ENABLEDEVICE = 1002;
-    private static final int CMD_DISABLEDEVICE = 1003;
     private static final int CMD_ACK_OK = 2000;
-    private static final int CMD_ACK_ERROR = 2001;
     private static final int CMD_REG_EVENT = 500;
 
     private static final int EF_ATTLOG = 1;
+
+    /** Same initial reply counter as pyzk (USHRT_MAX - 1). */
+    private static final int REPLY_ID_START = 65534;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -70,7 +62,7 @@ public class ZkFingerprintService implements FingerprintService {
     private Future<?> listenTask;
 
     public ZkFingerprintService(String host, int port) {
-        this(host, port, 5000);
+        this(host, port, 8000);
     }
 
     public ZkFingerprintService(String host, int port, int connectTimeoutMs) {
@@ -79,12 +71,9 @@ public class ZkFingerprintService implements FingerprintService {
         this.connectTimeoutMs = connectTimeoutMs;
     }
 
-    /** Default: 192.168.1.200:4370 */
     public ZkFingerprintService() {
-        this("192.168.1.200", 4370, 5000);
+        this("192.168.1.200", 4370, 8000);
     }
-
-    // ==================== Connection ====================
 
     @Override
     public synchronized void connect() throws FingerprintException {
@@ -94,19 +83,23 @@ public class ZkFingerprintService implements FingerprintService {
         try {
             socket = new Socket();
             socket.connect(new InetSocketAddress(host, port), connectTimeoutMs);
-            socket.setSoTimeout(3000);
+            socket.setTcpNoDelay(true);
+            socket.setSoTimeout(8000);
             in = socket.getInputStream();
             out = socket.getOutputStream();
             sessionId = 0;
-            replyNumber = 0;
+            replyNumber = REPLY_ID_START;
 
-            // CMD_CONNECT
             byte[] reply = sendCommand(CMD_CONNECT, new byte[0]);
-            if (reply == null || getCommand(reply) != CMD_ACK_OK) {
+            if (reply == null) {
                 closeQuietly();
-                throw new FingerprintException("Device did not acknowledge CONNECT");
+                throw new FingerprintException("No reply from device on CONNECT");
             }
-            // session id comes from the reply header
+            int cmd = getCommand(reply);
+            if (cmd != CMD_ACK_OK) {
+                closeQuietly();
+                throw new FingerprintException("Device rejected CONNECT, cmd=" + cmd);
+            }
             sessionId = getSessionId(reply);
             connected.set(true);
             logger.info("Connected to ZK device " + host + ":" + port + " session=" + sessionId);
@@ -125,7 +118,6 @@ public class ZkFingerprintService implements FingerprintService {
         try {
             sendCommand(CMD_EXIT, new byte[0]);
         } catch (Exception ignored) {
-            // ignore on shutdown
         }
         closeQuietly();
         connected.set(false);
@@ -136,8 +128,6 @@ public class ZkFingerprintService implements FingerprintService {
     public boolean isConnected() {
         return connected.get() && socket != null && socket.isConnected() && !socket.isClosed();
     }
-
-    // ==================== Real-time verification ====================
 
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -156,7 +146,6 @@ public class ZkFingerprintService implements FingerprintService {
 
         listenTask = executor.submit(() -> {
             try {
-                // Register for realtime events (all events: 0xFFFF)
                 byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
                 byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
                 if (regReply == null || getCommand(regReply) != CMD_ACK_OK) {
@@ -164,7 +153,7 @@ public class ZkFingerprintService implements FingerprintService {
                 }
 
                 long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
-                socket.setSoTimeout(1000); // poll every 1s to check timeout / cancel
+                socket.setSoTimeout(1000);
 
                 while (listening.get() && System.currentTimeMillis() < deadline) {
                     try {
@@ -173,11 +162,10 @@ public class ZkFingerprintService implements FingerprintService {
 
                         int cmd = getCommand(packet);
                         if (cmd == CMD_REG_EVENT) {
-                            int eventCode = getSessionId(packet); // in realtime packets, session field = event code
+                            int eventCode = getSessionId(packet);
                             if (eventCode == EF_ATTLOG) {
                                 VerificationResult result = parseAttLog(packet);
                                 if (result != null) {
-                                    // ACK the event
                                     sendAck();
                                     listening.set(false);
                                     if (onVerified != null) {
@@ -186,12 +174,11 @@ public class ZkFingerprintService implements FingerprintService {
                                     return;
                                 }
                             } else {
-                                // ACK other events so device keeps sending
                                 sendAck();
                             }
                         }
                     } catch (java.net.SocketTimeoutException ste) {
-                        // expected while polling
+                        // poll
                     }
                 }
 
@@ -219,12 +206,9 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    // ==================== User management (stubs for next step) ====================
-
     @Override
     public List<DeviceUser> getUsers() throws FingerprintException {
         ensureConnected();
-        // TODO: implement CMD_USER_WRQ / data read in next step
         logger.warning("getUsers() not fully implemented yet");
         return new ArrayList<>();
     }
@@ -232,15 +216,13 @@ public class ZkFingerprintService implements FingerprintService {
     @Override
     public void createUser(String deviceUserId, String name) throws FingerprintException {
         ensureConnected();
-        // TODO: implement user upload in next step
-        throw new FingerprintException("createUser not implemented yet – will be added in next step");
+        throw new FingerprintException("createUser not implemented yet");
     }
 
     @Override
     public void deleteUser(String deviceUserId) throws FingerprintException {
         ensureConnected();
-        // TODO: implement CMD_DELETE_USER in next step
-        throw new FingerprintException("deleteUser not implemented yet – will be added in next step");
+        throw new FingerprintException("deleteUser not implemented yet");
     }
 
     @Override
@@ -248,20 +230,16 @@ public class ZkFingerprintService implements FingerprintService {
                             Consumer<EnrollResult> onFinished,
                             Consumer<FingerprintException> onError) throws FingerprintException {
         ensureConnected();
-        // TODO: implement enroll flow in next step
         if (onError != null) {
-            onError.accept(new FingerprintException("startEnroll not implemented yet – will be added in next step"));
+            onError.accept(new FingerprintException("startEnroll not implemented yet"));
         }
     }
 
     @Override
     public DeviceInfo getDeviceInfo() throws FingerprintException {
         ensureConnected();
-        // Minimal info; full options read can be added later
         return new DeviceInfo("unknown", "unknown", "ZMM100_TFT", host + ":" + port);
     }
-
-    // ==================== Protocol helpers ====================
 
     private void ensureConnected() throws FingerprintException {
         if (!isConnected()) {
@@ -288,66 +266,81 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private byte[] buildPacket(int command, int session, int replyId, byte[] data) {
-        int payloadSize = 8 + (data != null ? data.length : 0);
-        ByteBuffer buf = ByteBuffer.allocate(8 + payloadSize);
-        buf.order(ByteOrder.LITTLE_ENDIAN);
+        int dataLen = (data != null) ? data.length : 0;
+        int payloadSize = 8 + dataLen;
 
-        buf.put(PACKET_START);
-        buf.putInt(payloadSize);
-
-        // payload header without checksum first
-        ByteBuffer payload = ByteBuffer.allocate(payloadSize);
-        payload.order(ByteOrder.LITTLE_ENDIAN);
-        payload.putShort((short) command);
-        payload.putShort((short) 0); // checksum placeholder
-        payload.putShort((short) session);
-        payload.putShort((short) replyId);
-        if (data != null && data.length > 0) {
-            payload.put(data);
+        // Build payload with checksum = 0 first (same as pyzk)
+        byte[] payload = new byte[payloadSize];
+        // command (LE)
+        payload[0] = (byte) (command & 0xFF);
+        payload[1] = (byte) ((command >> 8) & 0xFF);
+        // checksum placeholder = 0
+        payload[2] = 0;
+        payload[3] = 0;
+        // session (LE)
+        payload[4] = (byte) (session & 0xFF);
+        payload[5] = (byte) ((session >> 8) & 0xFF);
+        // reply id (LE)
+        payload[6] = (byte) (replyId & 0xFF);
+        payload[7] = (byte) ((replyId >> 8) & 0xFF);
+        if (dataLen > 0) {
+            System.arraycopy(data, 0, payload, 8, dataLen);
         }
 
-        byte[] payloadBytes = payload.array();
-        int checksum = calculateChecksum(payloadBytes);
-        payloadBytes[2] = (byte) (checksum & 0xFF);
-        payloadBytes[3] = (byte) ((checksum >> 8) & 0xFF);
+        int checksum = createChecksum(payload);
+        payload[2] = (byte) (checksum & 0xFF);
+        payload[3] = (byte) ((checksum >> 8) & 0xFF);
 
-        buf.put(payloadBytes);
-        return buf.array();
+        // Full packet: start(4) + size(4) + payload
+        byte[] packet = new byte[8 + payloadSize];
+        System.arraycopy(PACKET_START, 0, packet, 0, 4);
+        packet[4] = (byte) (payloadSize & 0xFF);
+        packet[5] = (byte) ((payloadSize >> 8) & 0xFF);
+        packet[6] = (byte) ((payloadSize >> 16) & 0xFF);
+        packet[7] = (byte) ((payloadSize >> 24) & 0xFF);
+        System.arraycopy(payload, 0, packet, 8, payloadSize);
+        return packet;
     }
 
     /**
-     * ZK checksum: sum of payload as little-endian shorts, then bitwise adjustments.
-     * Simplified version compatible with most devices.
+     * Checksum exactly as in pyzk / zk-protocol libraries:
+     * sum 16-bit little-endian words over the whole payload (with checksum field = 0),
+     * then bitwise NOT, normalize to 0..65535.
      */
-    private int calculateChecksum(byte[] payload) {
-        // Zero checksum field before calculating
-        int sum = 0;
-        for (int i = 0; i < payload.length; i += 2) {
-            int low = payload[i] & 0xFF;
-            int high = (i + 1 < payload.length) ? (payload[i + 1] & 0xFF) : 0;
-            // skip the checksum bytes themselves (index 2,3)
-            if (i == 2) continue;
-            sum += (high << 8) | low;
-            sum &= 0xFFFF;
+    private static int createChecksum(byte[] payload) {
+        int chksum = 0;
+        int size = payload.length;
+        for (int i = 0; i < size; i += 2) {
+            if (i == size - 1) {
+                chksum += payload[i] & 0xFF;
+            } else {
+                chksum += (payload[i] & 0xFF) + ((payload[i + 1] & 0xFF) << 8);
+            }
+            chksum %= 65536;
         }
-        sum = ~sum & 0xFFFF;
-        // Some firmwares use a slightly different algorithm; if CONNECT fails,
-        // we may need to adjust. For many ZMM100 devices this works.
-        return (sum + 1) & 0xFFFF;
+        chksum = ~chksum;
+        while (chksum < 0) {
+            chksum += 65536;
+        }
+        return chksum & 0xFFFF;
     }
 
     private byte[] readPacket() throws IOException {
-        // Read start + size (8 bytes)
         byte[] header = readFully(8);
         if (header == null) return null;
 
-        if (header[0] != 0x50 || header[1] != 0x50) {
-            logger.warning("Invalid packet start");
+        if ((header[0] & 0xFF) != 0x50 || (header[1] & 0xFF) != 0x50) {
+            logger.warning("Invalid packet start: "
+                    + String.format("%02X %02X", header[0], header[1]));
             return null;
         }
 
-        int payloadSize = ByteBuffer.wrap(header, 4, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
-        if (payloadSize < 8 || payloadSize > 65535) {
+        int payloadSize = (header[4] & 0xFF)
+                | ((header[5] & 0xFF) << 8)
+                | ((header[6] & 0xFF) << 16)
+                | ((header[7] & 0xFF) << 24);
+
+        if (payloadSize < 8 || payloadSize > 1024 * 1024) {
             logger.warning("Invalid payload size: " + payloadSize);
             return null;
         }
@@ -355,7 +348,6 @@ public class ZkFingerprintService implements FingerprintService {
         byte[] payload = readFully(payloadSize);
         if (payload == null) return null;
 
-        // Return full packet (header + payload) for helpers that expect it
         byte[] full = new byte[8 + payloadSize];
         System.arraycopy(header, 0, full, 0, 8);
         System.arraycopy(payload, 0, full, 8, payloadSize);
@@ -374,38 +366,27 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private int getCommand(byte[] fullPacket) {
-        // payload starts at offset 8
-        return ByteBuffer.wrap(fullPacket, 8, 2).order(ByteOrder.LITTLE_ENDIAN).getShort() & 0xFFFF;
+        return (fullPacket[8] & 0xFF) | ((fullPacket[9] & 0xFF) << 8);
     }
 
     private int getSessionId(byte[] fullPacket) {
-        return ByteBuffer.wrap(fullPacket, 12, 2).order(ByteOrder.LITTLE_ENDIAN).getShort() & 0xFFFF;
+        return (fullPacket[12] & 0xFF) | ((fullPacket[13] & 0xFF) << 8);
     }
 
-    /**
-     * Parse EF_ATTLOG realtime payload.
-     * Layout (after 8-byte payload header):
-     *   user id string 9 bytes
-     *   zeros 15 bytes
-     *   verify type 2 bytes LE
-     *   time 6 bytes: Y-2000, M, D, H, M, S
-     */
     private VerificationResult parseAttLog(byte[] fullPacket) {
         try {
-            // data starts at offset 16 (8 packet header + 8 payload header)
             int dataOffset = 16;
             if (fullPacket.length < dataOffset + 32) {
                 return null;
             }
 
-            // user id: 9 bytes null-terminated string
             int end = dataOffset;
             while (end < dataOffset + 9 && fullPacket[end] != 0) end++;
             String userId = new String(fullPacket, dataOffset, end - dataOffset, StandardCharsets.US_ASCII).trim();
             if (userId.isEmpty()) return null;
 
-            int verifyType = ByteBuffer.wrap(fullPacket, dataOffset + 24, 2)
-                    .order(ByteOrder.LITTLE_ENDIAN).getShort() & 0xFFFF;
+            int verifyType = (fullPacket[dataOffset + 24] & 0xFF)
+                    | ((fullPacket[dataOffset + 25] & 0xFF) << 8);
 
             int y = (fullPacket[dataOffset + 26] & 0xFF) + 2000;
             int mo = fullPacket[dataOffset + 27] & 0xFF;
@@ -429,15 +410,9 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private void closeQuietly() {
-        try {
-            if (in != null) in.close();
-        } catch (IOException ignored) {}
-        try {
-            if (out != null) out.close();
-        } catch (IOException ignored) {}
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException ignored) {}
+        try { if (in != null) in.close(); } catch (IOException ignored) {}
+        try { if (out != null) out.close(); } catch (IOException ignored) {}
+        try { if (socket != null) socket.close(); } catch (IOException ignored) {}
         in = null;
         out = null;
         socket = null;
