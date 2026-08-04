@@ -11,6 +11,7 @@ import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.awt.event.WindowEvent;
 import java.sql.SQLException;
+import java.util.List;
 
 public class ManageFrame extends JFrame {
     private final DatabaseManager db;
@@ -31,7 +32,6 @@ public class ManageFrame extends JFrame {
         setLocationRelativeTo(null);
         getContentPane().setBackground(Color.WHITE);
 
-        // ----------------- پنل بالایی با دکمه بازگشت -----------------
         JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         topPanel.setBackground(Color.WHITE);
         JButton backButton = new JButton("برگشت به صفحه اصلی");
@@ -47,7 +47,7 @@ public class ManageFrame extends JFrame {
         JTabbedPane tabbedPane = new JTabbedPane();
         tabbedPane.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        // --- جدول ماشین‌ها ---
+        // --- Cars ---
         String[] carColumns = {"نام", "رنگ", "پلاک", "وضعیت"};
         carModel = new DefaultTableModel(carColumns, 0) {
             @Override
@@ -58,8 +58,7 @@ public class ManageFrame extends JFrame {
         carTable = new JTable(carModel);
         carTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         carTable.setRowHeight(25);
-        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(carModel);
-        carTable.setRowSorter(sorter);
+        carTable.setRowSorter(new TableRowSorter<>(carModel));
         centerColumns(carTable);
 
         JScrollPane carScroll = new JScrollPane(carTable);
@@ -84,8 +83,8 @@ public class ManageFrame extends JFrame {
         editCarButton.addActionListener(e -> openCarEditFrame());
         deleteCarButton.addActionListener(e -> deleteCar());
 
-        // --- جدول کارمندها ---
-        String[] empColumns = {"شماره پرسنلی", "نام", "شماره تماس", "آیدی تلگرام", "وضعیت"};
+        // --- Employees ---
+        String[] empColumns = {"شناسه دستگاه", "نام", "شماره تماس", "وضعیت"};
         employeeModel = new DefaultTableModel(empColumns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -95,8 +94,7 @@ public class ManageFrame extends JFrame {
         employeeTable = new JTable(employeeModel);
         employeeTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         employeeTable.setRowHeight(25);
-        TableRowSorter<DefaultTableModel> empSorter = new TableRowSorter<>(employeeModel);
-        employeeTable.setRowSorter(empSorter);
+        employeeTable.setRowSorter(new TableRowSorter<>(employeeModel));
         centerColumns(employeeTable);
 
         JScrollPane empScroll = new JScrollPane(employeeTable);
@@ -144,10 +142,15 @@ public class ManageFrame extends JFrame {
                 String status = parts[3].equals("1") ? "در ماموریت" : "آزاد";
                 carModel.addRow(new Object[]{parts[0], parts[1], parts[2], status});
             }
-            for (String emp : db.getAllEmployees()) {
-                String[] parts = emp.split(" - ");
-                String status = parts[4].equals("1") ? "در ماموریت" : "آزاد";
-                employeeModel.addRow(new Object[]{parts[0], parts[1], parts[2], parts[3], status});
+            List<Employee> employees = db.getAllEmployees();
+            for (Employee emp : employees) {
+                String status = emp.isRenting() ? "در ماموریت" : "آزاد";
+                employeeModel.addRow(new Object[]{
+                        emp.getDeviceUserId(),
+                        emp.getName(),
+                        emp.getPhone() != null ? emp.getPhone() : "",
+                        status
+                });
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "خطا در بارگذاری داده‌ها: " + e.getMessage());
@@ -163,10 +166,10 @@ public class ManageFrame extends JFrame {
 
         int modelRow = carTable.convertRowIndexToModel(viewRow);
 
-        String model = carTable.getValueAt(modelRow, 0).toString();
-        String plate = carTable.getValueAt(modelRow, 1).toString();
-        String color = carTable.getValueAt(modelRow, 2).toString();
-        String status = carTable.getValueAt(modelRow, 3).toString();
+        String model = carModel.getValueAt(modelRow, 0).toString();
+        String color = carModel.getValueAt(modelRow, 1).toString();
+        String plate = carModel.getValueAt(modelRow, 2).toString();
+        String status = carModel.getValueAt(modelRow, 3).toString();
 
         if (status.equals("در ماموریت")) {
             JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در ماموریت وجود ندارد!");
@@ -195,11 +198,8 @@ public class ManageFrame extends JFrame {
 
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
 
-        int personnelId = Integer.parseInt(employeeModel.getValueAt(modelRow, 0).toString());
-        String name = employeeModel.getValueAt(modelRow, 1).toString();
-        String phone = employeeModel.getValueAt(modelRow, 2).toString();
-        String telegramId = employeeModel.getValueAt(modelRow, 3).toString();
-        String status = employeeModel.getValueAt(modelRow, 4).toString();
+        String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
+        String status = employeeModel.getValueAt(modelRow, 3).toString();
 
         if (status.equals("در ماموریت")) {
             JOptionPane.showMessageDialog(this,
@@ -207,17 +207,25 @@ public class ManageFrame extends JFrame {
             return;
         }
 
-        Employee emp = new Employee(personnelId, name, phone, telegramId);
-
-        dispose();
-        EditFrame editFrame = new EditFrame(emp);
-        editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosed(WindowEvent e) {
-                new ManageFrame();
+        try {
+            Employee emp = db.findByDeviceUserId(deviceUserId);
+            if (emp == null) {
+                JOptionPane.showMessageDialog(this, "کارمند پیدا نشد!");
+                return;
             }
-        });
-        editFrame.setVisible(true);
+
+            dispose();
+            EditFrame editFrame = new EditFrame(emp);
+            editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
+                @Override
+                public void windowClosed(WindowEvent e) {
+                    new ManageFrame();
+                }
+            });
+            editFrame.setVisible(true);
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "خطا: " + e.getMessage());
+        }
     }
 
     private void deleteCar() {
@@ -254,12 +262,12 @@ public class ManageFrame extends JFrame {
 
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
 
-        if (employeeModel.getValueAt(modelRow, 4).equals("آزاد")) {
+        if (employeeModel.getValueAt(modelRow, 3).equals("آزاد")) {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این کارمند را حذف کنید؟");
             if (confirmed) {
                 try {
-                    int personnelId = Integer.parseInt(employeeModel.getValueAt(modelRow, 0).toString());
-                    db.deleteEmployee(personnelId, this::loadDataFromDB); // فقط این
+                    String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
+                    db.deleteEmployeeByDeviceUserId(deviceUserId, this::loadDataFromDB);
                     JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
                 } catch (SQLException e) {
                     JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());
