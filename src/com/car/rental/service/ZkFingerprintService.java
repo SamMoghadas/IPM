@@ -20,7 +20,7 @@ import java.util.logging.Logger;
 /**
  * ZKTeco TCP client (port 4370).
  * User record: TFT 72-byte pack matching pyzk.
- * Enroll: userId(24) + finger + 0x01.
+ * Enroll: userId(24) + finger + 0x01; completion detected via REG_EVENT.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -37,8 +37,8 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_STARTENROLL = 61;
     private static final int EF_ATTLOG = 1;
 
-    /** Seconds to wait for user to place finger after STARTENROLL. */
-    private static final int ENROLL_WAIT_SECONDS = 25;
+    /** Max seconds to wait for enroll-related device events. */
+    private static final int ENROLL_TIMEOUT_SECONDS = 45;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -75,8 +75,6 @@ public class ZkFingerprintService implements FingerprintService {
     public ZkFingerprintService() {
         this("192.168.1.200", 4370, 8000);
     }
-
-    // ==================== Connection ====================
 
     @Override
     public synchronized void connect() throws FingerprintException {
@@ -130,8 +128,6 @@ public class ZkFingerprintService implements FingerprintService {
     public boolean isConnected() {
         return connected.get() && socket != null && socket.isConnected() && !socket.isClosed();
     }
-
-    // ==================== Real-time verification ====================
 
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -210,8 +206,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    // ==================== User management ====================
-
     @Override
     public List<DeviceUser> getUsers() throws FingerprintException {
         ensureConnected();
@@ -260,10 +254,10 @@ public class ZkFingerprintService implements FingerprintService {
                     throw new FingerprintException("finger index must be 0..9");
                 }
                 sendStartEnroll(deviceUserId, fingerIndex);
-                Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
+                waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
                 if (onFinished != null) {
                     onFinished.accept(new EnrollResult(true,
-                            "Enroll window finished for user " + deviceUserId));
+                            "Enroll finished for user " + deviceUserId));
                 }
             } catch (FingerprintException e) {
                 if (onError != null) {
@@ -279,7 +273,7 @@ public class ZkFingerprintService implements FingerprintService {
 
     /**
      * Full registration: create user + enroll. On failure after create, deletes user from device.
-     * Blocking – call from background thread.
+     * Blocks until device sends enroll-related REG_EVENT or timeout.
      */
     public synchronized void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex)
             throws FingerprintException {
@@ -296,12 +290,7 @@ public class ZkFingerprintService implements FingerprintService {
             } catch (IOException e) {
                 throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
             }
-            try {
-                Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new FingerprintException("Enroll interrupted");
-            }
+            waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
         } catch (FingerprintException e) {
             if (userCreated) {
                 try {
@@ -311,6 +300,68 @@ public class ZkFingerprintService implements FingerprintService {
                 }
             }
             throw e;
+        }
+    }
+
+    /**
+     * After STARTENROLL, wait for device realtime REG_EVENT (finger accepted / enroll progress).
+     * Returns as soon as at least one REG_EVENT is seen (then brief settle), or throws on timeout.
+     */
+    private void waitForEnrollDeviceEvent(int timeoutSeconds) throws FingerprintException {
+        try {
+            // Enable realtime events so enroll progress is pushed to us
+            byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
+            try {
+                byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
+                if (regReply != null && getCommand(regReply) != CMD_ACK_OK) {
+                    logger.warning("REG_EVENT register not ACK during enroll; still listening");
+                }
+            } catch (IOException e) {
+                logger.log(Level.WARNING, "Could not register events before enroll wait", e);
+            }
+
+            long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+            int previousTimeout = socket.getSoTimeout();
+            socket.setSoTimeout(1000);
+            boolean sawEvent = false;
+            try {
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        byte[] packet = readPacket();
+                        if (packet == null) {
+                            continue;
+                        }
+                        int cmd = getCommand(packet);
+                        if (cmd == CMD_REG_EVENT) {
+                            sawEvent = true;
+                            sendAck();
+                            // Enroll often sends one or more events; treat first as enough to continue
+                            // Short settle so multi-scan enroll can finish on device side
+                            Thread.sleep(1500);
+                            logger.info("Enroll: received REG_EVENT from device, finishing wait");
+                            return;
+                        }
+                        // Ignore other command replies during wait
+                    } catch (java.net.SocketTimeoutException ste) {
+                        // keep waiting
+                    }
+                }
+            } finally {
+                try {
+                    socket.setSoTimeout(previousTimeout);
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (!sawEvent) {
+                throw new FingerprintException(
+                        "Enroll timeout: no fingerprint event from device within "
+                                + timeoutSeconds + " seconds");
+            }
+        } catch (FingerprintException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FingerprintException("Error while waiting for enroll: " + e.getMessage(), e);
         }
     }
 
