@@ -3,6 +3,7 @@ package com.car.rental.ui.frames;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.ui.components.PlateInputPanel;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.util.IranianPlate;
 
 import javax.swing.*;
 import javax.swing.table.*;
@@ -100,7 +101,7 @@ public class ReportFrame extends JFrame {
                 data[i][1] = r.employeeName;
                 data[i][2] = r.carName;
                 data[i][3] = r.carColor;
-                data[i][4] = r.plate;
+                data[i][4] = IranianPlate.formatForDisplay(r.plate);
                 data[i][5] = r.pickupDate;
                 data[i][6] = r.returnDate;
                 data[i][7] = r.destination;
@@ -122,6 +123,10 @@ public class ReportFrame extends JFrame {
             for (int i = 0; i < table.getColumnCount(); i++) {
                 table.getColumnModel().getColumn(i).setCellRenderer(center);
             }
+            DefaultTableCellRenderer plateRenderer = new DefaultTableCellRenderer();
+            plateRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+            plateRenderer.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+            table.getColumnModel().getColumn(4).setCellRenderer(plateRenderer);
 
             sorter = new TableRowSorter<>(model);
             table.setRowSorter(sorter);
@@ -138,7 +143,13 @@ public class ReportFrame extends JFrame {
 
     private void applyFilters(PlateInputPanel platePanel, JTextField empField) {
 
-        String plateText = platePanel.getPlate();
+        String plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
+        if (plateText.isEmpty() && platePanel.isComplete()) {
+            plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
+        }
+        // Also match storage form if user filled plate panel
+        String plateStorage = platePanel.getPlate();
+
         String empText = empField.getText().trim();
         String dateText = searchDateField.getText().trim();
 
@@ -148,7 +159,14 @@ public class ReportFrame extends JFrame {
             @Override
             public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
 
-                boolean plateMatch = plateText.isEmpty() || entry.getStringValue(4).contains(plateText);
+                String cellPlate = entry.getStringValue(4).replace("\u200E", "").trim();
+                boolean plateMatch = true;
+                if (platePanel.isComplete()) {
+                    plateMatch = cellPlate.contains(plateText)
+                            || (!plateStorage.isEmpty() && cellPlate.contains(
+                            IranianPlate.formatForDisplay(plateStorage).replace("\u200E", "").trim()));
+                }
+
                 boolean empMatch = empText.isEmpty() || entry.getStringValue(0).contains(empText);
 
                 boolean dateMatch = true;
