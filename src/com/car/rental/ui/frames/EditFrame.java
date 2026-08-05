@@ -226,7 +226,6 @@ public class EditFrame extends JFrame {
         if (mode == EditMode.CAR) {
             carModelField.setText(car.getModel() != null ? car.getModel() : "");
             carColorField.setText(car.getColor() != null ? car.getColor() : "");
-            // plate already passed to PlateInputPanel constructor
         } else {
             deviceUserIdField.setText(employee.getDeviceUserId());
             nameField.setText(employee.getName() != null ? employee.getName() : "");
@@ -307,8 +306,8 @@ public class EditFrame extends JFrame {
             @Override
             protected Void doInBackground() throws Exception {
                 fingerprintService.connect();
-                // rewrite user on device with same id + new name (fingerprints kept if device supports)
-                fingerprintService.createUser(deviceUserId, name);
+                // name only — does not delete existing fingerprints
+                fingerprintService.updateUserName(deviceUserId, name);
                 return null;
             }
 
@@ -366,7 +365,6 @@ public class EditFrame extends JFrame {
                 publish("اتصال به دستگاه...");
                 fingerprintService.connect();
                 publish("ثبت اثر انگشت — انگشت را چند بار روی سنسور بگذارید");
-                // full re-register: user + enroll (same as add flow)
                 fingerprintService.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
                 return null;
             }
@@ -382,7 +380,6 @@ public class EditFrame extends JFrame {
             protected void done() {
                 try {
                     get();
-                    // keep DB name in sync if user changed name before re-enroll
                     employee.setName(name);
                     employee.setPhone(phoneField.getText().strip());
                     db.updateEmployee(employee);
