@@ -7,7 +7,6 @@ import com.car.rental.service.FingerprintException;
 import com.car.rental.service.FingerprintService;
 import com.car.rental.service.VerificationResult;
 import com.car.rental.service.ZkFingerprintService;
-import com.car.rental.util.IranianPlate;
 
 import javax.swing.*;
 import java.awt.*;
@@ -305,19 +304,8 @@ public class MainFrame extends JFrame {
         }
 
         try {
-            String selected = Objects.requireNonNull(carCombo.getSelectedItem()).toString();
-            // name - color - plateDisplay  (plate may contain spaces)
-            int first = selected.indexOf(" - ");
-            int second = selected.indexOf(" - ", first + 3);
-            if (first < 0 || second < 0) {
-                JOptionPane.showMessageDialog(this, "فرمت ماشین نامعتبر است");
-                return;
-            }
-            String platePart = selected.substring(second + 3).trim();
-            String carPlate = IranianPlate.toStorageOrEmpty(platePart);
-            if (carPlate.isEmpty()) {
-                carPlate = platePart;
-            }
+            String[] selectedCar = Objects.requireNonNull(carCombo.getSelectedItem()).toString().split(" - ");
+            String carPlate = selectedCar[2];
             String pickupTime = formatDeviceTime(pickupDeviceTime);
 
             db.insertRental(pickupDeviceUserId, carPlate, pickupTime, dest);
@@ -393,7 +381,7 @@ public class MainFrame extends JFrame {
             returnActiveRental = active;
 
             returnStatusLabel.setText("تأیید شد: " + emp.getName()
-                    + " | ماشین: " + active.carName + " (" + IranianPlate.formatForDisplay(active.plate) + ")"
+                    + " | ماشین: " + active.carName + " (" + active.plate + ")"
                     + " | زمان: " + formatDeviceTime(returnDeviceTime));
             returnStatusLabel.setForeground(new Color(0, 128, 0));
             setReturnListeningUi(false);
@@ -482,13 +470,7 @@ public class MainFrame extends JFrame {
         carCombo.removeAllItems();
         try {
             for (String car : db.getAvailableCars()) {
-                String[] parts = car.split(" - ", 3);
-                if (parts.length >= 3) {
-                    String plateDisplay = IranianPlate.formatForDisplay(parts[2]);
-                    carCombo.addItem(parts[0] + " - " + parts[1] + " - " + plateDisplay);
-                } else {
-                    carCombo.addItem(car);
-                }
+                carCombo.addItem(car);
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
