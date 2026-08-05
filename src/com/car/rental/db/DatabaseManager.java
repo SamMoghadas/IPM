@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
+    private static final int DEVICE_USER_ID_START = 1001;
     private static Connection connection;
 
     private Connection getConnection() throws SQLException {
@@ -68,6 +69,35 @@ public class DatabaseManager {
     }
 
     // ==================== Employee ====================
+
+    /**
+     * Next device user id for rental employees: max existing numeric id + 1, or 1001.
+     * Considers all rows (including soft-deleted) so ids are not reused.
+     */
+    public String getNextDeviceUserId() throws SQLException {
+        String sql = "SELECT device_user_id FROM EmployeeTable";
+        int max = DEVICE_USER_ID_START - 1;
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String raw = rs.getString("device_user_id");
+                if (raw == null) continue;
+                try {
+                    int v = Integer.parseInt(raw.trim());
+                    if (v > max) {
+                        max = v;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        int next = Math.max(max + 1, DEVICE_USER_ID_START);
+        if (next > 65535) {
+            throw new SQLException("Device user id range exhausted (max 65535)");
+        }
+        return String.valueOf(next);
+    }
 
     public void addEmployee(String deviceUserId, String name, String phone) throws SQLException {
         String sql = "INSERT INTO EmployeeTable(device_user_id, name, phone) VALUES(?,?,?)";
@@ -309,11 +339,8 @@ public class DatabaseManager {
         }
     }
 
-    // ==================== Rental (no confirm_code) ====================
+    // ==================== Rental ====================
 
-    /**
-     * Register car pickup using fingerprint device user id and device time.
-     */
     public void insertRental(String deviceUserId,
                              String carPlate,
                              String pickupTime,
@@ -363,10 +390,6 @@ public class DatabaseManager {
         }
     }
 
-    /**
-     * Return car by device_user_id (fingerprint).
-     * Closes the active rental of this employee.
-     */
     public boolean returnCarByDeviceUserId(String deviceUserId, String returnDate) throws SQLException {
         Employee emp = findByDeviceUserId(deviceUserId);
         if (emp == null) {
@@ -451,7 +474,6 @@ public class DatabaseManager {
         return records;
     }
 
-    /** Get active rental info for an employee (by device_user_id). */
     public RentalRecord getActiveRentalByDeviceUserId(String deviceUserId) throws SQLException {
         String query = "SELECT e.id AS employee_id, e.name AS employee_name, " +
                 "c.name AS car_name, c.color AS car_color, c.plate, " +
