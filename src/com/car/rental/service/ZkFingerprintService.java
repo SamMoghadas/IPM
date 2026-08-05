@@ -19,8 +19,8 @@ import java.util.logging.Logger;
 
 /**
  * ZKTeco TCP client (port 4370).
- * CONNECT packet verified against real pyzk capture:
- * 50 50 82 7D 08 00 00 00 E8 03 17 FC 00 00 00 00
+ * User record: TFT 72-byte pack matching pyzk.
+ * Enroll: userId(24) + finger + 0x01.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -28,9 +28,17 @@ public class ZkFingerprintService implements FingerprintService {
 
     private static final int CMD_CONNECT = 1000;
     private static final int CMD_EXIT = 1001;
+    private static final int CMD_ENABLEDEVICE = 1002;
+    private static final int CMD_DISABLEDEVICE = 1003;
     private static final int CMD_ACK_OK = 2000;
     private static final int CMD_REG_EVENT = 500;
+    private static final int CMD_USER_WRQ = 8;
+    private static final int CMD_DELETE_USER = 18;
+    private static final int CMD_STARTENROLL = 61;
     private static final int EF_ATTLOG = 1;
+
+    /** Seconds to wait for user to place finger after STARTENROLL. */
+    private static final int ENROLL_WAIT_SECONDS = 25;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -42,14 +50,13 @@ public class ZkFingerprintService implements FingerprintService {
     private InputStream in;
     private OutputStream out;
     private int sessionId;
-    /** Next reply_id to send. First CONNECT must use 0 (matches pyzk). */
     private int replyNumber;
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicBoolean listening = new AtomicBoolean(false);
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "zk-fingerprint-listener");
+    private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "zk-fingerprint-worker");
         t.setDaemon(true);
         return t;
     });
@@ -69,6 +76,8 @@ public class ZkFingerprintService implements FingerprintService {
         this("192.168.1.200", 4370, 8000);
     }
 
+    // ==================== Connection ====================
+
     @Override
     public synchronized void connect() throws FingerprintException {
         if (connected.get()) {
@@ -82,22 +91,20 @@ public class ZkFingerprintService implements FingerprintService {
             in = socket.getInputStream();
             out = socket.getOutputStream();
             sessionId = 0;
-            replyNumber = 0; // pyzk first CONNECT uses reply_id = 0
+            replyNumber = 0;
 
             byte[] reply = sendCommand(CMD_CONNECT, new byte[0]);
             if (reply == null) {
                 closeQuietly();
                 throw new FingerprintException("No reply from device on CONNECT");
             }
-            int cmd = getCommand(reply);
-            if (cmd != CMD_ACK_OK) {
+            if (getCommand(reply) != CMD_ACK_OK) {
                 closeQuietly();
-                throw new FingerprintException("Device rejected CONNECT, cmd=" + cmd);
+                throw new FingerprintException("Device rejected CONNECT");
             }
             sessionId = getSessionId(reply);
             connected.set(true);
-            logger.info("Connected to ZK device " + host + ":" + port + " session=" + sessionId);
-            System.out.println("Connected! session=" + sessionId);
+            logger.info("Connected to ZK " + host + ":" + port + " session=" + sessionId);
         } catch (IOException e) {
             closeQuietly();
             throw new FingerprintException("Cannot connect to device " + host + ":" + port, e);
@@ -123,6 +130,8 @@ public class ZkFingerprintService implements FingerprintService {
     public boolean isConnected() {
         return connected.get() && socket != null && socket.isConnected() && !socket.isClosed();
     }
+
+    // ==================== Real-time verification ====================
 
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -201,31 +210,113 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
+    // ==================== User management ====================
+
     @Override
     public List<DeviceUser> getUsers() throws FingerprintException {
         ensureConnected();
         return new ArrayList<>();
     }
 
+    /**
+     * Create user on device (no fingerprint yet).
+     * deviceUserId is the PIN shown on device; internal uid is derived from it.
+     */
     @Override
-    public void createUser(String deviceUserId, String name) throws FingerprintException {
+    public synchronized void createUser(String deviceUserId, String name) throws FingerprintException {
         ensureConnected();
-        throw new FingerprintException("createUser not implemented yet");
+        int uid = toInternalUid(deviceUserId);
+        try {
+            disableDevice();
+            try {
+                // best-effort delete if same uid exists
+                try {
+                    deleteUserByUid(uid);
+                } catch (FingerprintException ignored) {
+                }
+                writeUser(uid, name == null ? "" : name, deviceUserId);
+            } finally {
+                enableDevice();
+            }
+        } catch (IOException e) {
+            throw new FingerprintException("createUser failed: " + e.getMessage(), e);
+        }
     }
 
+    /**
+     * Delete user by device user id (PIN). Uses same uid mapping as createUser.
+     */
     @Override
-    public void deleteUser(String deviceUserId) throws FingerprintException {
+    public synchronized void deleteUser(String deviceUserId) throws FingerprintException {
         ensureConnected();
-        throw new FingerprintException("deleteUser not implemented yet");
+        int uid = toInternalUid(deviceUserId);
+        try {
+            deleteUserByUid(uid);
+        } catch (IOException e) {
+            throw new FingerprintException("deleteUser failed: " + e.getMessage(), e);
+        }
     }
 
+    /**
+     * Start enroll on device then wait for operator to place finger.
+     * Runs on background thread; callbacks are invoked when finished.
+     */
     @Override
     public void startEnroll(String deviceUserId, int fingerIndex,
                             Consumer<EnrollResult> onFinished,
-                            Consumer<FingerprintException> onError) throws FingerprintException {
+                            Consumer<FingerprintException> onError) {
+        executor.submit(() -> {
+            try {
+                ensureConnected();
+                if (fingerIndex < 0 || fingerIndex > 9) {
+                    throw new FingerprintException("finger index must be 0..9");
+                }
+                sendStartEnroll(deviceUserId, fingerIndex);
+                // Device UI guides the user; we wait a fixed window
+                Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
+                if (onFinished != null) {
+                    onFinished.accept(new EnrollResult(true,
+                            "Enroll window finished for user " + deviceUserId));
+                }
+            } catch (FingerprintException e) {
+                if (onError != null) {
+                    onError.accept(e);
+                }
+            } catch (Exception e) {
+                if (onError != null) {
+                    onError.accept(new FingerprintException("Enroll failed: " + e.getMessage(), e));
+                }
+            }
+        });
+    }
+
+    /**
+     * Full registration: create user + enroll. On enroll failure, deletes user from device.
+     * Blocking – call from background thread.
+     */
+    public synchronized void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex)
+            throws FingerprintException {
         ensureConnected();
-        if (onError != null) {
-            onError.accept(new FingerprintException("startEnroll not implemented yet"));
+        boolean userCreated = false;
+        try {
+            createUser(deviceUserId, name);
+            userCreated = true;
+            sendStartEnroll(deviceUserId, fingerIndex);
+            try {
+                Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new FingerprintException("Enroll interrupted");
+            }
+        } catch (FingerprintException e) {
+            if (userCreated) {
+                try {
+                    deleteUser(deviceUserId);
+                } catch (FingerprintException delEx) {
+                    logger.log(Level.WARNING, "Rollback deleteUser failed", delEx);
+                }
+            }
+            throw e;
         }
     }
 
@@ -235,34 +326,105 @@ public class ZkFingerprintService implements FingerprintService {
         return new DeviceInfo("unknown", "unknown", "ZMM100_TFT", host + ":" + port);
     }
 
+    // ==================== UID mapping ====================
+
+    /**
+     * Map external device user id to internal ZK uid (1..65535).
+     * If numeric and in range, use it; otherwise stable hash.
+     */
+    public static int toInternalUid(String deviceUserId) {
+        if (deviceUserId == null || deviceUserId.isBlank()) {
+            throw new IllegalArgumentException("deviceUserId is empty");
+        }
+        String trimmed = deviceUserId.trim();
+        try {
+            long n = Long.parseLong(trimmed);
+            if (n >= 1 && n <= 65535) {
+                return (int) n;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        int h = Math.abs(trimmed.hashCode() % 65535);
+        return h == 0 ? 1 : h;
+    }
+
+    // ==================== Low-level user ops ====================
+
+    private void disableDevice() throws IOException, FingerprintException {
+        requireAck(sendCommand(CMD_DISABLEDEVICE, new byte[0]), "DISABLEDEVICE");
+    }
+
+    private void enableDevice() throws IOException, FingerprintException {
+        requireAck(sendCommand(CMD_ENABLEDEVICE, new byte[0]), "ENABLEDEVICE");
+    }
+
+    private void deleteUserByUid(int uid) throws IOException, FingerprintException {
+        byte[] data = new byte[2];
+        data[0] = (byte) (uid & 0xFF);
+        data[1] = (byte) ((uid >> 8) & 0xFF);
+        requireAck(sendCommand(CMD_DELETE_USER, data), "DELETE_USER");
+    }
+
+    /** TFT 72-byte user: HB8s24s4sx7sx24s */
+    private void writeUser(int uid, String name, String userId) throws IOException, FingerprintException {
+        byte[] password = padFixed("", 8);
+        byte[] nameBytes = padFixed(name, 24);
+        byte[] card = new byte[4];
+        byte[] groupId = padFixed("", 7);
+        byte[] userIdBytes = padFixed(userId, 24);
+
+        byte[] data = new byte[72];
+        int o = 0;
+        data[o++] = (byte) (uid & 0xFF);
+        data[o++] = (byte) ((uid >> 8) & 0xFF);
+        data[o++] = 0; // privilege
+        System.arraycopy(password, 0, data, o, 8); o += 8;
+        System.arraycopy(nameBytes, 0, data, o, 24); o += 24;
+        System.arraycopy(card, 0, data, o, 4); o += 4;
+        data[o++] = 0; // pad
+        System.arraycopy(groupId, 0, data, o, 7); o += 7;
+        data[o++] = 0; // pad
+        System.arraycopy(userIdBytes, 0, data, o, 24);
+
+        requireAck(sendCommand(CMD_USER_WRQ, data), "USER_WRQ");
+    }
+
+    /** pack: userId 24 bytes + finger + 0x01 */
+    private void sendStartEnroll(String deviceUserId, int fingerIndex)
+            throws IOException, FingerprintException {
+        byte[] data = new byte[26];
+        System.arraycopy(padFixed(deviceUserId, 24), 0, data, 0, 24);
+        data[24] = (byte) (fingerIndex & 0xFF);
+        data[25] = 1;
+        requireAck(sendCommand(CMD_STARTENROLL, data), "STARTENROLL");
+    }
+
+    // ==================== Protocol ====================
+
     private void ensureConnected() throws FingerprintException {
         if (!isConnected()) {
             throw new FingerprintException("Not connected to device");
         }
     }
 
+    private void requireAck(byte[] reply, String op) throws FingerprintException {
+        if (reply == null || getCommand(reply) != CMD_ACK_OK) {
+            throw new FingerprintException(op + " not acknowledged by device");
+        }
+    }
+
     private synchronized byte[] sendCommand(int command, byte[] data) throws IOException {
         int replyId = replyNumber & 0xFFFF;
         replyNumber = (replyNumber + 1) & 0xFFFF;
-
         byte[] packet = buildPacket(command, sessionId, replyId, data);
-        System.out.println("JAVA SEND: " + toHex(packet));
         out.write(packet);
         out.flush();
-
-        byte[] reply = readPacket();
-        if (reply != null) {
-            System.out.println("JAVA RECV: " + toHex(reply));
-        } else {
-            System.out.println("JAVA RECV: null");
-        }
-        return reply;
+        return readPacket();
     }
 
     private synchronized void sendAck() {
         try {
-            byte[] packet = buildPacket(CMD_ACK_OK, sessionId, 0, new byte[0]);
-            out.write(packet);
+            out.write(buildPacket(CMD_ACK_OK, sessionId, 0, new byte[0]));
             out.flush();
         } catch (IOException e) {
             logger.log(Level.WARNING, "Failed to send ACK", e);
@@ -270,9 +432,8 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private byte[] buildPacket(int command, int session, int replyId, byte[] data) {
-        int dataLen = (data != null) ? data.length : 0;
+        int dataLen = data == null ? 0 : data.length;
         int payloadSize = 8 + dataLen;
-
         byte[] payload = new byte[payloadSize];
         payload[0] = (byte) (command & 0xFF);
         payload[1] = (byte) ((command >> 8) & 0xFF);
@@ -285,7 +446,6 @@ public class ZkFingerprintService implements FingerprintService {
         if (dataLen > 0) {
             System.arraycopy(data, 0, payload, 8, dataLen);
         }
-
         int checksum = createChecksum(payload);
         payload[2] = (byte) (checksum & 0xFF);
         payload[3] = (byte) ((checksum >> 8) & 0xFF);
@@ -300,14 +460,10 @@ public class ZkFingerprintService implements FingerprintService {
         return packet;
     }
 
-    /**
-     * Checksum matching pyzk (USHRT_MAX = 65535 style folding).
-     */
     private static int createChecksum(byte[] payload) {
         int chksum = 0;
-        int size = payload.length;
-        for (int i = 0; i < size; i += 2) {
-            if (i == size - 1) {
+        for (int i = 0; i < payload.length; i += 2) {
+            if (i == payload.length - 1) {
                 chksum += payload[i] & 0xFF;
             } else {
                 chksum += (payload[i] & 0xFF) + ((payload[i + 1] & 0xFF) << 8);
@@ -326,25 +482,18 @@ public class ZkFingerprintService implements FingerprintService {
     private byte[] readPacket() throws IOException {
         byte[] header = readFully(8);
         if (header == null) return null;
-
         if ((header[0] & 0xFF) != 0x50 || (header[1] & 0xFF) != 0x50) {
-            logger.warning("Invalid packet start: " + toHex(header));
             return null;
         }
-
         int payloadSize = (header[4] & 0xFF)
                 | ((header[5] & 0xFF) << 8)
                 | ((header[6] & 0xFF) << 16)
                 | ((header[7] & 0xFF) << 24);
-
         if (payloadSize < 8 || payloadSize > 1024 * 1024) {
-            logger.warning("Invalid payload size: " + payloadSize);
             return null;
         }
-
         byte[] payload = readFully(payloadSize);
         if (payload == null) return null;
-
         byte[] full = new byte[8 + payloadSize];
         System.arraycopy(header, 0, full, 0, 8);
         System.arraycopy(payload, 0, full, 8, payloadSize);
@@ -376,7 +525,6 @@ public class ZkFingerprintService implements FingerprintService {
             if (fullPacket.length < dataOffset + 32) {
                 return null;
             }
-
             int end = dataOffset;
             while (end < dataOffset + 9 && fullPacket[end] != 0) end++;
             String userId = new String(fullPacket, dataOffset, end - dataOffset, StandardCharsets.US_ASCII).trim();
@@ -384,21 +532,18 @@ public class ZkFingerprintService implements FingerprintService {
 
             int verifyType = (fullPacket[dataOffset + 24] & 0xFF)
                     | ((fullPacket[dataOffset + 25] & 0xFF) << 8);
-
             int y = (fullPacket[dataOffset + 26] & 0xFF) + 2000;
             int mo = fullPacket[dataOffset + 27] & 0xFF;
             int d = fullPacket[dataOffset + 28] & 0xFF;
             int h = fullPacket[dataOffset + 29] & 0xFF;
             int mi = fullPacket[dataOffset + 30] & 0xFF;
             int s = fullPacket[dataOffset + 31] & 0xFF;
-
             LocalDateTime time;
             try {
                 time = LocalDateTime.of(y, mo, d, h, mi, s);
             } catch (Exception e) {
                 time = LocalDateTime.now();
             }
-
             return new VerificationResult(userId, time, verifyType);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to parse ATTLOG", e);
@@ -406,13 +551,11 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    private static String toHex(byte[] data) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < data.length; i++) {
-            if (i > 0) sb.append(' ');
-            sb.append(String.format("%02X", data[i]));
-        }
-        return sb.toString();
+    private static byte[] padFixed(String s, int len) {
+        byte[] src = (s == null ? "" : s).getBytes(StandardCharsets.UTF_8);
+        byte[] out = new byte[len];
+        System.arraycopy(src, 0, out, 0, Math.min(src.length, len));
+        return out;
     }
 
     private void closeQuietly() {
