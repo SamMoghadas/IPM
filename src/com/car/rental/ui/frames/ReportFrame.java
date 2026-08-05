@@ -143,17 +143,17 @@ public class ReportFrame extends JFrame {
 
     private void applyFilters(PlateInputPanel platePanel, JTextField empField) {
 
-        String plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
-        if (plateText.isEmpty() && platePanel.isComplete()) {
-            plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
-        }
-        // Also match storage form if user filled plate panel
-        String plateStorage = platePanel.getPlate();
+        final boolean plateFilterActive = platePanel.isComplete();
+        final String plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
+        final String plateStorage = platePanel.getPlate();
+        final String plateDisplayFromStorage = plateStorage.isEmpty()
+                ? ""
+                : IranianPlate.formatForDisplay(plateStorage).replace("\u200E", "").trim();
 
-        String empText = empField.getText().trim();
-        String dateText = searchDateField.getText().trim();
+        final String empText = empField.getText().trim();
+        final String dateText = searchDateField.getText().trim();
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
         sorter.setRowFilter(new RowFilter<>() {
             @Override
@@ -161,10 +161,9 @@ public class ReportFrame extends JFrame {
 
                 String cellPlate = entry.getStringValue(4).replace("\u200E", "").trim();
                 boolean plateMatch = true;
-                if (platePanel.isComplete()) {
+                if (plateFilterActive) {
                     plateMatch = cellPlate.contains(plateText)
-                            || (!plateStorage.isEmpty() && cellPlate.contains(
-                            IranianPlate.formatForDisplay(plateStorage).replace("\u200E", "").trim()));
+                            || (!plateDisplayFromStorage.isEmpty() && cellPlate.contains(plateDisplayFromStorage));
                 }
 
                 boolean empMatch = empText.isEmpty() || entry.getStringValue(0).contains(empText);
