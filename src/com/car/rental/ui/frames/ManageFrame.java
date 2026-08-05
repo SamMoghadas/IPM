@@ -48,7 +48,8 @@ public class ManageFrame extends JFrame {
         JTabbedPane tabbedPane = new JTabbedPane();
         tabbedPane.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
-        String[] carColumns = {"نام", "رنگ", "پلاک", "وضعیت"};
+        // col4 = storage plate (hidden)
+        String[] carColumns = {"نام", "رنگ", "پلاک", "وضعیت", "_storagePlate"};
         carModel = new DefaultTableModel(carColumns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -60,11 +61,16 @@ public class ManageFrame extends JFrame {
         carTable.setRowHeight(25);
         carTable.setRowSorter(new TableRowSorter<>(carModel));
         centerColumns(carTable);
-        // Plate column LTR so digits/letters stay ordered
+
         DefaultTableCellRenderer plateRenderer = new DefaultTableCellRenderer();
         plateRenderer.setHorizontalAlignment(SwingConstants.CENTER);
         plateRenderer.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
         carTable.getColumnModel().getColumn(2).setCellRenderer(plateRenderer);
+
+        // Hide storage column
+        carTable.getColumnModel().getColumn(4).setMinWidth(0);
+        carTable.getColumnModel().getColumn(4).setMaxWidth(0);
+        carTable.getColumnModel().getColumn(4).setPreferredWidth(0);
 
         JScrollPane carScroll = new JScrollPane(carTable);
         carScroll.getViewport().setBackground(Color.WHITE);
@@ -132,7 +138,8 @@ public class ManageFrame extends JFrame {
     private void centerColumns(JTable table) {
         DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
         centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-        for (int i = 0; i < table.getColumnCount(); i++) {
+        int visible = Math.min(table.getColumnCount(), 4);
+        for (int i = 0; i < visible; i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
         }
     }
@@ -145,29 +152,9 @@ public class ManageFrame extends JFrame {
                 String[] parts = car.split(" - ");
                 if (parts.length < 4) continue;
                 String status = parts[3].equals("1") ? "در ماموریت" : "آزاد";
-                // parts[2] is storage or legacy; show LTR-safe display
-                String plateDisplay = IranianPlate.formatForDisplay(parts[2]);
-                carModel.addRow(new Object[]{parts[0], parts[1], plateDisplay, status});
-                // keep storage key in client property via parallel — store storage in model as hidden?
-                // We put storage as user object by using a 5th invisible approach:
-                // simpler: store storage in plate column client via TableModel extra — use plateDisplay for UI
-                // and resolve via parse when editing.
-            }
-            // Re-load with storage retained: use plate storage string in a way edit can recover
-            carModel.setRowCount(0);
-            for (String car : db.getAllCars()) {
-                String[] parts = car.split(" - ");
-                if (parts.length < 4) continue;
-                String status = parts[3].equals("1") ? "در ماموریت" : "آزاد";
                 String storagePlate = parts[2];
                 String plateDisplay = IranianPlate.formatForDisplay(storagePlate);
                 carModel.addRow(new Object[]{parts[0], parts[1], plateDisplay, status, storagePlate});
-            }
-            // Hide storage column if present
-            if (carTable.getColumnCount() >= 5) {
-                carTable.getColumnModel().getColumn(4).setMinWidth(0);
-                carTable.getColumnModel().getColumn(4).setMaxWidth(0);
-                carTable.getColumnModel().getColumn(4).setWidth(0);
             }
 
             List<Employee> employees = db.getAllEmployees();
@@ -197,12 +184,7 @@ public class ManageFrame extends JFrame {
         String model = carModel.getValueAt(modelRow, 0).toString();
         String color = carModel.getValueAt(modelRow, 1).toString();
         String status = carModel.getValueAt(modelRow, 3).toString();
-        String storagePlate = carModel.getColumnCount() > 4
-                ? carModel.getValueAt(modelRow, 4).toString()
-                : IranianPlate.toStorageOrEmpty(carModel.getValueAt(modelRow, 2).toString());
-        if (storagePlate.isEmpty()) {
-            storagePlate = carModel.getValueAt(modelRow, 2).toString();
-        }
+        String storagePlate = carModel.getValueAt(modelRow, 4).toString();
 
         if (status.equals("در ماموریت")) {
             JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در ماموریت وجود ندارد!");
@@ -274,12 +256,7 @@ public class ManageFrame extends JFrame {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این ماشین را حذف کنید؟");
             if (confirmed) {
                 try {
-                    String storagePlate = carModel.getColumnCount() > 4
-                            ? carModel.getValueAt(modelRow, 4).toString()
-                            : IranianPlate.toStorageOrEmpty(carModel.getValueAt(modelRow, 2).toString());
-                    if (storagePlate.isEmpty()) {
-                        storagePlate = carModel.getValueAt(modelRow, 2).toString();
-                    }
+                    String storagePlate = carModel.getValueAt(modelRow, 4).toString();
                     db.deleteCar(storagePlate, this::loadDataFromDB);
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
                 } catch (SQLException e) {
