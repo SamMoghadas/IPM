@@ -19,8 +19,7 @@ import java.util.logging.Logger;
 
 /**
  * ZKTeco TCP client (port 4370).
- * User record: TFT 72-byte pack matching pyzk.
- * Enroll: userId(24) + finger + 0x01; completion detected via REG_EVENT.
+ * Enroll completion: realtime EF_ENROLLFINGER (8) with result 0 = success.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -35,10 +34,15 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_USER_WRQ = 8;
     private static final int CMD_DELETE_USER = 18;
     private static final int CMD_STARTENROLL = 61;
-    private static final int EF_ATTLOG = 1;
 
-    /** Max seconds to wait for enroll-related device events. */
-    private static final int ENROLL_TIMEOUT_SECONDS = 45;
+    /** Realtime event codes (session_id field of REG_EVENT packets). */
+    private static final int EF_ATTLOG = 1;
+    private static final int EF_FINGER = 2;
+    private static final int EF_ENROLLUSER = 4;
+    private static final int EF_ENROLLFINGER = 8;
+    private static final int EF_FPFTR = 256;
+
+    private static final int ENROLL_TIMEOUT_SECONDS = 60;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -271,10 +275,6 @@ public class ZkFingerprintService implements FingerprintService {
         });
     }
 
-    /**
-     * Full registration: create user + enroll. On failure after create, deletes user from device.
-     * Blocks until device sends enroll-related REG_EVENT or timeout.
-     */
     public synchronized void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex)
             throws FingerprintException {
         ensureConnected();
@@ -304,12 +304,13 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * After STARTENROLL, wait for device realtime REG_EVENT (finger accepted / enroll progress).
-     * Returns as soon as at least one REG_EVENT is seen (then brief settle), or throws on timeout.
+     * Wait until device reports EF_ENROLLFINGER (final enroll result).
+     * Intermediate EF_FINGER / EF_FPFTR are ignored (the 3 scans on device).
+     * Result field 0 = success; non-zero = fail (e.g. duplicate template).
      */
     private void waitForEnrollDeviceEvent(int timeoutSeconds) throws FingerprintException {
         try {
-            // Enable realtime events so enroll progress is pushed to us
+            // Subscribe to all realtime events including enroll
             byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
             try {
                 byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
@@ -323,7 +324,6 @@ public class ZkFingerprintService implements FingerprintService {
             long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
             int previousTimeout = socket.getSoTimeout();
             socket.setSoTimeout(1000);
-            boolean sawEvent = false;
             try {
                 while (System.currentTimeMillis() < deadline) {
                     try {
@@ -332,16 +332,37 @@ public class ZkFingerprintService implements FingerprintService {
                             continue;
                         }
                         int cmd = getCommand(packet);
-                        if (cmd == CMD_REG_EVENT) {
-                            sawEvent = true;
-                            sendAck();
-                            // Enroll often sends one or more events; treat first as enough to continue
-                            // Short settle so multi-scan enroll can finish on device side
-                            Thread.sleep(1500);
-                            logger.info("Enroll: received REG_EVENT from device, finishing wait");
+                        if (cmd != CMD_REG_EVENT) {
+                            continue;
+                        }
+
+                        int eventCode = getSessionId(packet);
+                        sendAck();
+                        logger.info("Enroll realtime event code=" + eventCode);
+
+                        // Intermediate: finger placed / quality score during the 3 scans
+                        if (eventCode == EF_FINGER || eventCode == EF_FPFTR
+                                || (eventCode & EF_FPFTR) != 0) {
+                            continue;
+                        }
+
+                        // Final enroll fingerprint result
+                        if (eventCode == EF_ENROLLFINGER || (eventCode & EF_ENROLLFINGER) != 0) {
+                            int result = parseEnrollFingerResult(packet);
+                            if (result == 0) {
+                                logger.info("EF_ENROLLFINGER success (result=0)");
+                                return;
+                            }
+                            throw new FingerprintException(
+                                    "ثبت اثر انگشت ناموفق بود (کد " + result
+                                            + "). احتمالاً اثر تکراری است؛ انگشت دیگری انتخاب کنید.");
+                        }
+
+                        // Some firmwares signal enroll user finished
+                        if (eventCode == EF_ENROLLUSER || (eventCode & EF_ENROLLUSER) != 0) {
+                            logger.info("EF_ENROLLUSER received — treating as enroll complete");
                             return;
                         }
-                        // Ignore other command replies during wait
                     } catch (java.net.SocketTimeoutException ste) {
                         // keep waiting
                     }
@@ -353,16 +374,22 @@ public class ZkFingerprintService implements FingerprintService {
                 }
             }
 
-            if (!sawEvent) {
-                throw new FingerprintException(
-                        "Enroll timeout: no fingerprint event from device within "
-                                + timeoutSeconds + " seconds");
-            }
+            throw new FingerprintException(
+                    "زمان ثبت اثر انگشت تمام شد. هر ۳ بار اسکن را کامل کنید یا انگشت دیگری امتحان کنید.");
         } catch (FingerprintException e) {
             throw e;
         } catch (Exception e) {
             throw new FingerprintException("Error while waiting for enroll: " + e.getMessage(), e);
         }
+    }
+
+    /** EF_ENROLLFINGER data: result(2 LE) at payload data offset. */
+    private int parseEnrollFingerResult(byte[] fullPacket) {
+        // data starts at overall offset 16
+        if (fullPacket.length < 18) {
+            return 0; // no result field — treat as success if event fired
+        }
+        return (fullPacket[16] & 0xFF) | ((fullPacket[17] & 0xFF) << 8);
     }
 
     @Override
