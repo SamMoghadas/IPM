@@ -68,12 +68,6 @@ public class DatabaseManager {
         }
     }
 
-    // ==================== Employee ====================
-
-    /**
-     * Next device user id for rental employees: max existing numeric id + 1, or 1001.
-     * Considers all rows (including soft-deleted) so ids are not reused.
-     */
     public String getNextDeviceUserId() throws SQLException {
         String sql = "SELECT device_user_id FROM EmployeeTable";
         int max = DEVICE_USER_ID_START - 1;
@@ -250,8 +244,6 @@ public class DatabaseManager {
         );
     }
 
-    // ==================== Car ====================
-
     public int getCarIdByPlate(String plate) throws SQLException {
         String sql = "SELECT id FROM CarTable WHERE plate = ?";
         try (Connection conn = getConnection();
@@ -339,8 +331,6 @@ public class DatabaseManager {
         }
     }
 
-    // ==================== Rental ====================
-
     public void insertRental(String deviceUserId,
                              String carPlate,
                              String pickupTime,
@@ -390,6 +380,9 @@ public class DatabaseManager {
         }
     }
 
+    /**
+     * Close active rental and free car + employee. Always restores autoCommit.
+     */
     public boolean returnCarByDeviceUserId(String deviceUserId, String returnDate) throws SQLException {
         Employee emp = findByDeviceUserId(deviceUserId);
         if (emp == null) {
@@ -403,8 +396,11 @@ public class DatabaseManager {
         String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 0, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
 
-        try (Connection conn = getConnection()) {
-            conn.setAutoCommit(false);
+        Connection conn = getConnection();
+        conn.setAutoCommit(false);
+        try {
+            int rentalId;
+            int carId;
 
             try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
                 selectStmt.setInt(1, emp.getId());
@@ -413,40 +409,45 @@ public class DatabaseManager {
                         conn.rollback();
                         return false;
                     }
-
-                    int rentalId = rs.getInt("id");
-                    int carId = rs.getInt("car_id");
-
-                    try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
-                         PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
-                         PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
-
-                        updateRentalStmt.setString(1, returnDate);
-                        updateRentalStmt.setInt(2, rentalId);
-                        updateRentalStmt.executeUpdate();
-
-                        updateCarStmt.setInt(1, carId);
-                        updateCarStmt.executeUpdate();
-
-                        updateEmpStmt.setInt(1, emp.getId());
-                        updateEmpStmt.executeUpdate();
-
-                        conn.commit();
-                        return true;
-                    } catch (SQLException e) {
-                        conn.rollback();
-                        throw e;
-                    } finally {
-                        conn.setAutoCommit(true);
-                    }
+                    rentalId = rs.getInt("id");
+                    carId = rs.getInt("car_id");
                 }
+            }
+
+            try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
+                 PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
+                 PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
+
+                updateRentalStmt.setString(1, returnDate);
+                updateRentalStmt.setInt(2, rentalId);
+                updateRentalStmt.executeUpdate();
+
+                updateCarStmt.setInt(1, carId);
+                updateCarStmt.executeUpdate();
+
+                updateEmpStmt.setInt(1, emp.getId());
+                updateEmpStmt.executeUpdate();
+
+                conn.commit();
+                return true;
+            }
+        } catch (SQLException e) {
+            try {
+                conn.rollback();
+            } catch (SQLException ignored) {
+            }
+            throw e;
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException ignored) {
             }
         }
     }
 
     public List<RentalRecord> getRentalReport() throws SQLException {
         List<RentalRecord> records = new ArrayList<>();
-        String sql = "SELECT e.id AS employee_id, e.device_user_id, e.name AS employee_name, " +
+        String sql = "SELECT e.device_user_id, e.name AS employee_name, " +
                 "c.name AS car_name, c.color AS car_color, c.plate, " +
                 "r.pickup_date, r.return_date, r.destination " +
                 "FROM RentalTable r " +
@@ -460,7 +461,7 @@ public class DatabaseManager {
 
             while (rs.next()) {
                 records.add(new RentalRecord(
-                        rs.getInt("employee_id"),
+                        rs.getString("device_user_id"),
                         rs.getString("employee_name"),
                         rs.getString("car_name"),
                         rs.getString("car_color"),
@@ -475,7 +476,7 @@ public class DatabaseManager {
     }
 
     public RentalRecord getActiveRentalByDeviceUserId(String deviceUserId) throws SQLException {
-        String query = "SELECT e.id AS employee_id, e.name AS employee_name, " +
+        String query = "SELECT e.device_user_id, e.name AS employee_name, " +
                 "c.name AS car_name, c.color AS car_color, c.plate, " +
                 "r.pickup_date, r.return_date, r.destination " +
                 "FROM RentalTable r " +
@@ -488,7 +489,7 @@ public class DatabaseManager {
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return new RentalRecord(
-                            rs.getInt("employee_id"),
+                            rs.getString("device_user_id"),
                             rs.getString("employee_name"),
                             rs.getString("car_name"),
                             rs.getString("car_color"),
