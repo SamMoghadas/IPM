@@ -35,7 +35,6 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_DELETE_USER = 18;
     private static final int CMD_STARTENROLL = 61;
 
-    /** Realtime event codes (session_id field of REG_EVENT packets). */
     private static final int EF_ATTLOG = 1;
     private static final int EF_FINGER = 2;
     private static final int EF_ENROLLUSER = 4;
@@ -236,6 +235,24 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
+    /**
+     * Update name on device without DELETE_USER so existing fingerprints stay.
+     */
+    public synchronized void updateUserName(String deviceUserId, String name) throws FingerprintException {
+        ensureConnected();
+        int uid = toInternalUid(deviceUserId);
+        try {
+            disableDevice();
+            try {
+                writeUser(uid, name == null ? "" : name, deviceUserId);
+            } finally {
+                enableDevice();
+            }
+        } catch (IOException e) {
+            throw new FingerprintException("updateUserName failed: " + e.getMessage(), e);
+        }
+    }
+
     @Override
     public synchronized void deleteUser(String deviceUserId) throws FingerprintException {
         ensureConnected();
@@ -303,14 +320,8 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /**
-     * Wait until device reports EF_ENROLLFINGER (final enroll result).
-     * Intermediate EF_FINGER / EF_FPFTR are ignored (the 3 scans on device).
-     * Result field 0 = success; non-zero = fail (e.g. duplicate template).
-     */
     private void waitForEnrollDeviceEvent(int timeoutSeconds) throws FingerprintException {
         try {
-            // Subscribe to all realtime events including enroll
             byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
             try {
                 byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
@@ -340,13 +351,11 @@ public class ZkFingerprintService implements FingerprintService {
                         sendAck();
                         logger.info("Enroll realtime event code=" + eventCode);
 
-                        // Intermediate: finger placed / quality score during the 3 scans
                         if (eventCode == EF_FINGER || eventCode == EF_FPFTR
                                 || (eventCode & EF_FPFTR) != 0) {
                             continue;
                         }
 
-                        // Final enroll fingerprint result
                         if (eventCode == EF_ENROLLFINGER || (eventCode & EF_ENROLLFINGER) != 0) {
                             int result = parseEnrollFingerResult(packet);
                             if (result == 0) {
@@ -358,7 +367,6 @@ public class ZkFingerprintService implements FingerprintService {
                                             + "). احتمالاً اثر تکراری است؛ انگشت دیگری انتخاب کنید.");
                         }
 
-                        // Some firmwares signal enroll user finished
                         if (eventCode == EF_ENROLLUSER || (eventCode & EF_ENROLLUSER) != 0) {
                             logger.info("EF_ENROLLUSER received — treating as enroll complete");
                             return;
@@ -383,11 +391,9 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /** EF_ENROLLFINGER data: result(2 LE) at payload data offset. */
     private int parseEnrollFingerResult(byte[] fullPacket) {
-        // data starts at overall offset 16
         if (fullPacket.length < 18) {
-            return 0; // no result field — treat as success if event fired
+            return 0;
         }
         return (fullPacket[16] & 0xFF) | ((fullPacket[17] & 0xFF) << 8);
     }
