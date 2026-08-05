@@ -30,8 +30,12 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_ENABLEDEVICE = 1002;
     private static final int CMD_DISABLEDEVICE = 1003;
     private static final int CMD_ACK_OK = 2000;
+    private static final int CMD_ACK_ERROR = 2001;
+    private static final int CMD_PREPARE_DATA = 1500;
+    private static final int CMD_DATA = 1501;
     private static final int CMD_REG_EVENT = 500;
     private static final int CMD_USER_WRQ = 8;
+    private static final int CMD_USERTEMP_RRQ = 9;
     private static final int CMD_DELETE_USER = 18;
     private static final int CMD_STARTENROLL = 61;
 
@@ -235,9 +239,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /**
-     * Update name on device without DELETE_USER so existing fingerprints stay.
-     */
     public synchronized void updateUserName(String deviceUserId, String name) throws FingerprintException {
         ensureConnected();
         int uid = toInternalUid(deviceUserId);
@@ -250,6 +251,110 @@ public class ZkFingerprintService implements FingerprintService {
             }
         } catch (IOException e) {
             throw new FingerprintException("updateUserName failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Returns finger indexes (0-9) that have a template for this user on the device.
+     * Uses CMD_USERTEMP_RRQ: exists → PREPARE_DATA/ACK_OK path; missing → ACK_ERROR.
+     */
+    public synchronized List<Integer> getEnrolledFingerIndexes(String deviceUserId)
+            throws FingerprintException {
+        ensureConnected();
+        int uid = toInternalUid(deviceUserId);
+        List<Integer> enrolled = new ArrayList<>();
+        try {
+            disableDevice();
+            try {
+                for (int fid = 0; fid <= 9; fid++) {
+                    if (hasFingerTemplate(uid, fid)) {
+                        enrolled.add(fid);
+                    }
+                }
+            } finally {
+                enableDevice();
+            }
+        } catch (IOException e) {
+            throw new FingerprintException("getEnrolledFingerIndexes failed: " + e.getMessage(), e);
+        }
+        logger.info("Enrolled fingers for " + deviceUserId + ": " + enrolled);
+        return enrolled;
+    }
+
+    /**
+     * Prefer the first enrolled finger, or -1 if none found.
+     */
+    public int getPrimaryEnrolledFingerIndex(String deviceUserId) throws FingerprintException {
+        List<Integer> list = getEnrolledFingerIndexes(deviceUserId);
+        return list.isEmpty() ? -1 : list.get(0);
+    }
+
+    private boolean hasFingerTemplate(int uid, int fingerIndex) throws IOException {
+        byte[] req = new byte[3];
+        req[0] = (byte) (uid & 0xFF);
+        req[1] = (byte) ((uid >> 8) & 0xFF);
+        req[2] = (byte) (fingerIndex & 0xFF);
+
+        byte[] reply = sendCommand(CMD_USERTEMP_RRQ, req);
+        if (reply == null) {
+            return false;
+        }
+        int cmd = getCommand(reply);
+        if (cmd == CMD_ACK_ERROR) {
+            return false;
+        }
+        if (cmd == CMD_PREPARE_DATA) {
+            // Drain template data packets so the socket stays in sync
+            drainTemplateData(reply);
+            return true;
+        }
+        if (cmd == CMD_ACK_OK) {
+            // Some firmwares ACK without PREPARE_DATA when empty/exists differently
+            return reply.length > 16;
+        }
+        return false;
+    }
+
+    private void drainTemplateData(byte[] preparePacket) throws IOException {
+        int size = 0;
+        if (preparePacket.length >= 20) {
+            size = (preparePacket[16] & 0xFF)
+                    | ((preparePacket[17] & 0xFF) << 8)
+                    | ((preparePacket[18] & 0xFF) << 16)
+                    | ((preparePacket[19] & 0xFF) << 24);
+        }
+        if (size <= 0) {
+            size = 2048; // safety upper bound read attempts
+        }
+        int read = 0;
+        int previousTimeout = socket.getSoTimeout();
+        try {
+            socket.setSoTimeout(2000);
+            while (read < size) {
+                byte[] packet = readPacket();
+                if (packet == null) {
+                    break;
+                }
+                int cmd = getCommand(packet);
+                if (cmd == CMD_DATA) {
+                    int payloadLen = packet.length - 16;
+                    if (payloadLen > 0) {
+                        read += payloadLen;
+                    }
+                    sendAck();
+                } else if (cmd == CMD_ACK_OK) {
+                    break;
+                } else {
+                    break;
+                }
+            }
+        } catch (java.net.SocketTimeoutException ste) {
+            // done draining
+        } finally {
+            try {
+                socket.setSoTimeout(previousTimeout);
+            } catch (Exception ignored) {
+            }
         }
     }
 
