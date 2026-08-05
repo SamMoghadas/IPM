@@ -7,6 +7,7 @@ import com.car.rental.service.FingerprintException;
 import com.car.rental.service.FingerprintService;
 import com.car.rental.service.VerificationResult;
 import com.car.rental.service.ZkFingerprintService;
+import com.car.rental.util.IranianPlate;
 
 import javax.swing.*;
 import java.awt.*;
@@ -24,7 +25,6 @@ public class MainFrame extends JFrame {
     private final DatabaseManager db;
     private final FingerprintService fingerprintService;
 
-    // --- Pickup UI ---
     private JComboBox<String> carCombo;
     private JTextField destinationField;
     private JLabel pickupStatusLabel;
@@ -32,18 +32,15 @@ public class MainFrame extends JFrame {
     private JButton pickupCancelButton;
     private JButton pickupConfirmButton;
 
-    // --- Return UI ---
     private JLabel returnStatusLabel;
     private JButton returnAuthButton;
     private JButton returnCancelButton;
     private JButton returnConfirmButton;
 
-    // --- Verified state (pickup) ---
     private String pickupDeviceUserId;
     private LocalDateTime pickupDeviceTime;
     private Employee pickupEmployee;
 
-    // --- Verified state (return) ---
     private String returnDeviceUserId;
     private LocalDateTime returnDeviceTime;
     private RentalRecord returnActiveRental;
@@ -87,8 +84,6 @@ public class MainFrame extends JFrame {
         setVisible(true);
     }
 
-    // ==================== Pickup panel ====================
-
     private JPanel createPickupPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createTitledBorder("ثبت تحویل ماشین"));
@@ -101,7 +96,6 @@ public class MainFrame extends JFrame {
 
         int row = 0;
 
-        // Car
         gbc.gridx = 0; gbc.gridy = row; gbc.anchor = GridBagConstraints.EAST;
         panel.add(label("ماشین:"), gbc);
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
@@ -112,7 +106,6 @@ public class MainFrame extends JFrame {
         panel.add(carCombo, gbc);
         row++;
 
-        // Destination
         gbc.gridx = 0; gbc.gridy = row; gbc.anchor = GridBagConstraints.EAST;
         panel.add(label("مقصد:"), gbc);
         gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
@@ -122,7 +115,6 @@ public class MainFrame extends JFrame {
         panel.add(destinationField, gbc);
         row++;
 
-        // Status
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
         pickupStatusLabel = new JLabel(" ");
         pickupStatusLabel.setFont(new Font("Arial", Font.PLAIN, 13));
@@ -131,7 +123,6 @@ public class MainFrame extends JFrame {
         gbc.gridwidth = 1;
         row++;
 
-        // Buttons
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
         btns.setBackground(Color.WHITE);
@@ -153,8 +144,6 @@ public class MainFrame extends JFrame {
 
         return panel;
     }
-
-    // ==================== Return panel ====================
 
     private JPanel createReturnPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
@@ -222,8 +211,6 @@ public class MainFrame extends JFrame {
         buttonsPanel.add(addItemsButton);
         return buttonsPanel;
     }
-
-    // ==================== Pickup auth flow ====================
 
     private void startPickupAuth() {
         if (carCombo.getSelectedItem() == null) {
@@ -318,8 +305,19 @@ public class MainFrame extends JFrame {
         }
 
         try {
-            String[] selectedCar = ((String) Objects.requireNonNull(carCombo.getSelectedItem())).split(" - ");
-            String carPlate = selectedCar[2];
+            String selected = Objects.requireNonNull(carCombo.getSelectedItem()).toString();
+            // name - color - plateDisplay  (plate may contain spaces)
+            int first = selected.indexOf(" - ");
+            int second = selected.indexOf(" - ", first + 3);
+            if (first < 0 || second < 0) {
+                JOptionPane.showMessageDialog(this, "فرمت ماشین نامعتبر است");
+                return;
+            }
+            String platePart = selected.substring(second + 3).trim();
+            String carPlate = IranianPlate.toStorageOrEmpty(platePart);
+            if (carPlate.isEmpty()) {
+                carPlate = platePart;
+            }
             String pickupTime = formatDeviceTime(pickupDeviceTime);
 
             db.insertRental(pickupDeviceUserId, carPlate, pickupTime, dest);
@@ -355,8 +353,6 @@ public class MainFrame extends JFrame {
         pickupEmployee = null;
         pickupConfirmButton.setEnabled(false);
     }
-
-    // ==================== Return auth flow ====================
 
     private void startReturnAuth() {
         resetReturnVerifiedState();
@@ -397,7 +393,7 @@ public class MainFrame extends JFrame {
             returnActiveRental = active;
 
             returnStatusLabel.setText("تأیید شد: " + emp.getName()
-                    + " | ماشین: " + active.carName + " (" + active.plate + ")"
+                    + " | ماشین: " + active.carName + " (" + IranianPlate.formatForDisplay(active.plate) + ")"
                     + " | زمان: " + formatDeviceTime(returnDeviceTime));
             returnStatusLabel.setForeground(new Color(0, 128, 0));
             setReturnListeningUi(false);
@@ -471,8 +467,6 @@ public class MainFrame extends JFrame {
         returnConfirmButton.setEnabled(false);
     }
 
-    // ==================== Helpers ====================
-
     private void ensureFingerprintConnected() {
         try {
             if (!fingerprintService.isConnected()) {
@@ -488,7 +482,13 @@ public class MainFrame extends JFrame {
         carCombo.removeAllItems();
         try {
             for (String car : db.getAvailableCars()) {
-                carCombo.addItem(car);
+                String[] parts = car.split(" - ", 3);
+                if (parts.length >= 3) {
+                    String plateDisplay = IranianPlate.formatForDisplay(parts[2]);
+                    carCombo.addItem(parts[0] + " - " + parts[1] + " - " + plateDisplay);
+                } else {
+                    carCombo.addItem(car);
+                }
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
