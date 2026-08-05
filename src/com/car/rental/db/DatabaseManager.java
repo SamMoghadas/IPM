@@ -259,6 +259,30 @@ public class DatabaseManager {
         }
     }
 
+    /**
+     * @param excludePlate plate of the car being edited (may stay the same); null for new cars
+     */
+    public boolean isPlateTaken(String plate, String excludePlate) throws SQLException {
+        if (plate == null || plate.isBlank()) {
+            return false;
+        }
+        String sql = "SELECT 1 FROM CarTable WHERE plate = ? AND is_deleted = 0";
+        if (excludePlate != null && !excludePlate.isBlank() && excludePlate.equals(plate)) {
+            return false; // same plate, same car
+        }
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, plate);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return false;
+                }
+                // exists — if exclude is different, it's taken by another car
+                return excludePlate == null || !excludePlate.equals(plate);
+            }
+        }
+    }
+
     public List<String> getAvailableCars() throws SQLException {
         List<String> cars = new ArrayList<>();
         String sql = "SELECT name, color, plate FROM CarTable WHERE is_deleted = 0 AND is_rented = 0";
