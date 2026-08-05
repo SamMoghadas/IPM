@@ -1,8 +1,11 @@
 package com.car.rental.ui.components;
 
+import com.car.rental.util.IranianPlate;
+
 import javax.swing.*;
 import javax.swing.text.*;
 import java.awt.*;
+import java.util.Optional;
 
 public class PlateInputPanel extends JPanel {
 
@@ -25,6 +28,7 @@ public class PlateInputPanel extends JPanel {
     private void initPanel() {
         setLayout(new BoxLayout(this, BoxLayout.X_AXIS));
         setBackground(Color.WHITE);
+        setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
     }
 
     private void initComponents() {
@@ -33,72 +37,117 @@ public class PlateInputPanel extends JPanel {
         firstTwo = new JTextField(2);
         firstTwo.setDocument(new LimitDigitsDocument(2));
         firstTwo.setPreferredSize(fieldSize);
+        firstTwo.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+        firstTwo.setHorizontalAlignment(JTextField.CENTER);
 
-        String[] letters = {"الف", "ب", "ج", "د", "س", "ص", "ط", "ق", "گ", "ل", "م", "ن", "و", "هـ", "ی"};
+        String[] letters = {"الف", "ب", "پ", "ت", "ث", "ج", "د", "ز", "س", "ش",
+                "ص", "ط", "ع", "ف", "ق", "ک", "گ", "ل", "م", "ن", "و", "ه", "ی"};
         letterCombo = new JComboBox<>(letters);
-        letterCombo.setPreferredSize(new Dimension(50, 24));
+        letterCombo.setPreferredSize(new Dimension(55, 24));
 
         middleThree = new JTextField(3);
         middleThree.setDocument(new LimitDigitsDocument(3));
         middleThree.setPreferredSize(new Dimension(50, 24));
+        middleThree.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+        middleThree.setHorizontalAlignment(JTextField.CENTER);
 
         cityCode = new JTextField(2);
         cityCode.setDocument(new LimitDigitsDocument(2));
         cityCode.setPreferredSize(fieldSize);
+        cityCode.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+        cityCode.setHorizontalAlignment(JTextField.CENTER);
     }
 
     private void initLayout() {
+        // Visual LTR order matching physical plate reading: 12 | letter | 345 | ایران | city
         add(firstTwo);
         add(Box.createHorizontalStrut(5));
         add(letterCombo);
         add(Box.createHorizontalStrut(5));
         add(middleThree);
         add(Box.createHorizontalStrut(5));
-        add(new JLabel("ایران"));
+        JLabel iran = new JLabel("ایران");
+        iran.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        add(iran);
         add(Box.createHorizontalStrut(5));
         add(cityCode);
     }
 
-    // ----------------- متدهای کاربردی -----------------
-
+    /**
+     * Value stored in DB: {@code 12|ب|345|11}
+     */
     public String getPlate() {
         if (!isComplete()) return "";
-        return cityCode.getText() + " ایران " +
-                middleThree.getText() + " " +
-                letterCombo.getSelectedItem() + " " +
-                firstTwo.getText();
+        IranianPlate plate = new IranianPlate(
+                firstTwo.getText(),
+                String.valueOf(letterCombo.getSelectedItem()),
+                middleThree.getText(),
+                cityCode.getText()
+        );
+        return plate.isValid() ? plate.toStorage() : "";
     }
 
+    /** Human-readable form for labels (with LTR mark). */
+    public String getPlateDisplay() {
+        if (!isComplete()) return "";
+        IranianPlate plate = new IranianPlate(
+                firstTwo.getText(),
+                String.valueOf(letterCombo.getSelectedItem()),
+                middleThree.getText(),
+                cityCode.getText()
+        );
+        return plate.isValid() ? plate.toDisplay() : "";
+    }
+
+    /**
+     * Accepts storage form or legacy display strings. Never throws.
+     */
     public void setPlate(String plate) {
-        if (plate == null || plate.isBlank()) return;
+        if (plate == null || plate.isBlank()) {
+            clear();
+            return;
+        }
+        Optional<IranianPlate> parsed = IranianPlate.parse(plate);
+        if (parsed.isEmpty()) {
+            clear();
+            return;
+        }
+        IranianPlate p = parsed.get();
+        firstTwo.setText(p.part1);
+        middleThree.setText(p.part2);
+        cityCode.setText(p.city);
 
-        String[] parts = plate.trim().split(" ");
-
-        String first = parts[4];
-        String letter = parts[3];
-        String mid = parts[2];
-        String city = parts[0];
-
-        firstTwo.setText(first);
-        letterCombo.setSelectedItem(letter);
-        middleThree.setText(mid);
-        cityCode.setText(city);
+        // Select letter if in list; otherwise add temporarily so value is visible
+        boolean found = false;
+        for (int i = 0; i < letterCombo.getItemCount(); i++) {
+            if (letterCombo.getItemAt(i).equals(p.letter)) {
+                letterCombo.setSelectedIndex(i);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            letterCombo.addItem(p.letter);
+            letterCombo.setSelectedItem(p.letter);
+        }
     }
 
     public boolean isComplete() {
-        return !firstTwo.getText().isEmpty() &&
-                !middleThree.getText().isEmpty() &&
-                !cityCode.getText().isEmpty();
+        return firstTwo.getText().length() == 2 &&
+                middleThree.getText().length() == 3 &&
+                cityCode.getText().length() == 2 &&
+                letterCombo.getSelectedItem() != null;
     }
 
     public void clear() {
         firstTwo.setText("");
         middleThree.setText("");
         cityCode.setText("");
-        letterCombo.setSelectedIndex(0);
+        if (letterCombo.getItemCount() > 0) {
+            letterCombo.setSelectedIndex(0);
+        }
     }
 
-    // ----------------- کنترل ارقام -----------------
     static class LimitDigitsDocument extends PlainDocument {
         private final int limit;
 
@@ -110,9 +159,9 @@ public class PlateInputPanel extends JPanel {
         public void insertString(int offset, String str, AttributeSet attr)
                 throws BadLocationException {
             if (str == null) return;
-
-            if ((getLength() + str.length()) <= limit && str.matches("\\d+")) {
-                super.insertString(offset, str, attr);
+            String normalized = IranianPlate.normalizeDigits(str);
+            if ((getLength() + normalized.length()) <= limit && normalized.matches("\\d+")) {
+                super.insertString(offset, normalized, attr);
             }
         }
     }
