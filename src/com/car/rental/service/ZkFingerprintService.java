@@ -218,10 +218,6 @@ public class ZkFingerprintService implements FingerprintService {
         return new ArrayList<>();
     }
 
-    /**
-     * Create user on device (no fingerprint yet).
-     * deviceUserId is the PIN shown on device; internal uid is derived from it.
-     */
     @Override
     public synchronized void createUser(String deviceUserId, String name) throws FingerprintException {
         ensureConnected();
@@ -229,7 +225,6 @@ public class ZkFingerprintService implements FingerprintService {
         try {
             disableDevice();
             try {
-                // best-effort delete if same uid exists
                 try {
                     deleteUserByUid(uid);
                 } catch (FingerprintException ignored) {
@@ -243,9 +238,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /**
-     * Delete user by device user id (PIN). Uses same uid mapping as createUser.
-     */
     @Override
     public synchronized void deleteUser(String deviceUserId) throws FingerprintException {
         ensureConnected();
@@ -257,10 +249,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /**
-     * Start enroll on device then wait for operator to place finger.
-     * Runs on background thread; callbacks are invoked when finished.
-     */
     @Override
     public void startEnroll(String deviceUserId, int fingerIndex,
                             Consumer<EnrollResult> onFinished,
@@ -272,7 +260,6 @@ public class ZkFingerprintService implements FingerprintService {
                     throw new FingerprintException("finger index must be 0..9");
                 }
                 sendStartEnroll(deviceUserId, fingerIndex);
-                // Device UI guides the user; we wait a fixed window
                 Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
                 if (onFinished != null) {
                     onFinished.accept(new EnrollResult(true,
@@ -291,17 +278,24 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Full registration: create user + enroll. On enroll failure, deletes user from device.
+     * Full registration: create user + enroll. On failure after create, deletes user from device.
      * Blocking – call from background thread.
      */
     public synchronized void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex)
             throws FingerprintException {
         ensureConnected();
+        if (fingerIndex < 0 || fingerIndex > 9) {
+            throw new FingerprintException("finger index must be 0..9");
+        }
         boolean userCreated = false;
         try {
             createUser(deviceUserId, name);
             userCreated = true;
-            sendStartEnroll(deviceUserId, fingerIndex);
+            try {
+                sendStartEnroll(deviceUserId, fingerIndex);
+            } catch (IOException e) {
+                throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
+            }
             try {
                 Thread.sleep(ENROLL_WAIT_SECONDS * 1000L);
             } catch (InterruptedException e) {
@@ -326,12 +320,6 @@ public class ZkFingerprintService implements FingerprintService {
         return new DeviceInfo("unknown", "unknown", "ZMM100_TFT", host + ":" + port);
     }
 
-    // ==================== UID mapping ====================
-
-    /**
-     * Map external device user id to internal ZK uid (1..65535).
-     * If numeric and in range, use it; otherwise stable hash.
-     */
     public static int toInternalUid(String deviceUserId) {
         if (deviceUserId == null || deviceUserId.isBlank()) {
             throw new IllegalArgumentException("deviceUserId is empty");
@@ -348,8 +336,6 @@ public class ZkFingerprintService implements FingerprintService {
         return h == 0 ? 1 : h;
     }
 
-    // ==================== Low-level user ops ====================
-
     private void disableDevice() throws IOException, FingerprintException {
         requireAck(sendCommand(CMD_DISABLEDEVICE, new byte[0]), "DISABLEDEVICE");
     }
@@ -365,7 +351,6 @@ public class ZkFingerprintService implements FingerprintService {
         requireAck(sendCommand(CMD_DELETE_USER, data), "DELETE_USER");
     }
 
-    /** TFT 72-byte user: HB8s24s4sx7sx24s */
     private void writeUser(int uid, String name, String userId) throws IOException, FingerprintException {
         byte[] password = padFixed("", 8);
         byte[] nameBytes = padFixed(name, 24);
@@ -377,19 +362,18 @@ public class ZkFingerprintService implements FingerprintService {
         int o = 0;
         data[o++] = (byte) (uid & 0xFF);
         data[o++] = (byte) ((uid >> 8) & 0xFF);
-        data[o++] = 0; // privilege
+        data[o++] = 0;
         System.arraycopy(password, 0, data, o, 8); o += 8;
         System.arraycopy(nameBytes, 0, data, o, 24); o += 24;
         System.arraycopy(card, 0, data, o, 4); o += 4;
-        data[o++] = 0; // pad
+        data[o++] = 0;
         System.arraycopy(groupId, 0, data, o, 7); o += 7;
-        data[o++] = 0; // pad
+        data[o++] = 0;
         System.arraycopy(userIdBytes, 0, data, o, 24);
 
         requireAck(sendCommand(CMD_USER_WRQ, data), "USER_WRQ");
     }
 
-    /** pack: userId 24 bytes + finger + 0x01 */
     private void sendStartEnroll(String deviceUserId, int fingerIndex)
             throws IOException, FingerprintException {
         byte[] data = new byte[26];
@@ -398,8 +382,6 @@ public class ZkFingerprintService implements FingerprintService {
         data[25] = 1;
         requireAck(sendCommand(CMD_STARTENROLL, data), "STARTENROLL");
     }
-
-    // ==================== Protocol ====================
 
     private void ensureConnected() throws FingerprintException {
         if (!isConnected()) {
