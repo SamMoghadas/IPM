@@ -1,7 +1,6 @@
 package com.car.rental.db;
 
 import com.car.rental.util.DataChangeCallback;
-import com.car.rental.util.IranianPlate;
 import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
@@ -246,28 +245,18 @@ public class DatabaseManager {
     }
 
     public int getCarIdByPlate(String plate) throws SQLException {
-        if (plate == null || plate.isBlank()) {
-            throw new SQLException("Plate is empty");
-        }
-        // Try exact, then normalized storage form (legacy rows may differ)
-        String storage = IranianPlate.toStorageOrEmpty(plate);
-        String[] candidates = storage.isEmpty()
-                ? new String[]{plate.trim()}
-                : new String[]{plate.trim(), storage};
-
-        String sql = "SELECT id FROM CarTable WHERE plate = ? AND is_deleted = 0";
+        String sql = "SELECT id FROM CarTable WHERE plate = ?";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-            for (String candidate : candidates) {
-                stmt.setString(1, candidate);
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getInt("id");
-                    }
+            stmt.setString(1, plate);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("id");
+                } else {
+                    throw new SQLException("Car not found for plate: " + plate);
                 }
             }
         }
-        throw new SQLException("Car not found for plate: " + plate);
     }
 
     public List<String> getAvailableCars() throws SQLException {
