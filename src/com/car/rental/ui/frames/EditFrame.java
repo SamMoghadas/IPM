@@ -8,6 +8,7 @@ import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.List;
 
 public class EditFrame extends JFrame {
     public enum EditMode {
@@ -67,6 +68,7 @@ public class EditFrame extends JFrame {
         initLayout();
         initActions();
         fillFields();
+        loadEnrolledFingerFromDevice();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -134,6 +136,7 @@ public class EditFrame extends JFrame {
         phoneField.setHorizontalAlignment(JTextField.LEFT);
 
         fingerCombo = new JComboBox<>(FINGER_LABELS);
+        // temporary default until device reports enrolled finger
         fingerCombo.setSelectedIndex(6);
 
         reEnrollButton = new JButton("ثبت مجدد اثر انگشت");
@@ -233,6 +236,61 @@ public class EditFrame extends JFrame {
         }
     }
 
+    /** Query device for which fingers are enrolled and select the first in the combo. */
+    private void loadEnrolledFingerFromDevice() {
+        employeeStatusLabel.setForeground(new Color(180, 120, 0));
+        employeeStatusLabel.setText("در حال خواندن انگشت ثبت‌شده از دستگاه...");
+        fingerCombo.setEnabled(false);
+
+        new SwingWorker<List<Integer>, Void>() {
+            @Override
+            protected List<Integer> doInBackground() throws Exception {
+                fingerprintService.connect();
+                return fingerprintService.getEnrolledFingerIndexes(employee.getDeviceUserId());
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    List<Integer> fingers = get();
+                    if (fingers != null && !fingers.isEmpty()) {
+                        int primary = fingers.get(0);
+                        if (primary >= 0 && primary <= 9) {
+                            fingerCombo.setSelectedIndex(primary);
+                        }
+                        if (fingers.size() == 1) {
+                            employeeStatusLabel.setForeground(new Color(0, 128, 0));
+                            employeeStatusLabel.setText("انگشت فعلی روی دستگاه: " + FINGER_LABELS[primary]);
+                        } else {
+                            employeeStatusLabel.setForeground(new Color(0, 128, 0));
+                            employeeStatusLabel.setText(
+                                    "انگشت‌های ثبت‌شده: " + fingers + " — انتخاب‌شده: " + primary);
+                        }
+                    } else {
+                        employeeStatusLabel.setForeground(new Color(180, 120, 0));
+                        employeeStatusLabel.setText(
+                                "انگشت ثبت‌شده‌ای روی دستگاه پیدا نشد؛ مقدار پیش‌فرض را می‌توانید عوض کنید");
+                    }
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    String msg = cause.getMessage() != null ? cause.getMessage() : cause.toString();
+                    employeeStatusLabel.setForeground(Color.RED);
+                    employeeStatusLabel.setText("خواندن انگشت از دستگاه ناموفق — پیش‌فرض استفاده شد");
+                    // keep default index; optional soft log
+                    System.err.println("loadEnrolledFingerFromDevice: " + msg);
+                } finally {
+                    fingerCombo.setEnabled(true);
+                    try {
+                        if (fingerprintService != null && fingerprintService.isConnected()) {
+                            fingerprintService.disconnect();
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }.execute();
+    }
+
     private int addRow(JPanel panel, GridBagConstraints gbc, int row,
                        String labelText, JComponent component) {
         gbc.gridx = 1;
@@ -306,7 +364,6 @@ public class EditFrame extends JFrame {
             @Override
             protected Void doInBackground() throws Exception {
                 fingerprintService.connect();
-                // name only — does not delete existing fingerprints
                 fingerprintService.updateUserName(deviceUserId, name);
                 return null;
             }
@@ -385,7 +442,8 @@ public class EditFrame extends JFrame {
                     db.updateEmployee(employee);
 
                     employeeStatusLabel.setForeground(new Color(0, 128, 0));
-                    employeeStatusLabel.setText("اثر انگشت با موفقیت ثبت شد");
+                    employeeStatusLabel.setText("اثر انگشت با موفقیت ثبت شد — انگشت: "
+                            + FINGER_LABELS[fingerIndex]);
                     JOptionPane.showMessageDialog(EditFrame.this, "اثر انگشت به‌روز شد ✅");
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
