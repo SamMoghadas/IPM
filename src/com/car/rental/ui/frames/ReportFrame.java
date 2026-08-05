@@ -3,7 +3,6 @@ package com.car.rental.ui.frames;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.ui.components.PlateInputPanel;
 import com.car.rental.model.RentalRecord;
-import com.car.rental.util.IranianPlate;
 
 import javax.swing.*;
 import javax.swing.table.*;
@@ -101,7 +100,7 @@ public class ReportFrame extends JFrame {
                 data[i][1] = r.employeeName;
                 data[i][2] = r.carName;
                 data[i][3] = r.carColor;
-                data[i][4] = IranianPlate.formatForDisplay(r.plate);
+                data[i][4] = r.plate;
                 data[i][5] = r.pickupDate;
                 data[i][6] = r.returnDate;
                 data[i][7] = r.destination;
@@ -123,10 +122,6 @@ public class ReportFrame extends JFrame {
             for (int i = 0; i < table.getColumnCount(); i++) {
                 table.getColumnModel().getColumn(i).setCellRenderer(center);
             }
-            DefaultTableCellRenderer plateRenderer = new DefaultTableCellRenderer();
-            plateRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-            plateRenderer.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
-            table.getColumnModel().getColumn(4).setCellRenderer(plateRenderer);
 
             sorter = new TableRowSorter<>(model);
             table.setRowSorter(sorter);
@@ -143,39 +138,23 @@ public class ReportFrame extends JFrame {
 
     private void applyFilters(PlateInputPanel platePanel, JTextField empField) {
 
-        final boolean plateFilterActive = platePanel.isComplete();
-        final String plateText = platePanel.getPlateDisplay().replace("\u200E", "").trim();
-        final String plateStorage = platePanel.getPlate();
-        final String plateDisplayFromStorage = plateStorage.isEmpty()
-                ? ""
-                : IranianPlate.formatForDisplay(plateStorage).replace("\u200E", "").trim();
-
+        final String plateText = platePanel.getPlate().trim();
         final String empText = empField.getText().trim();
         final String dateText = searchDateField.getText().trim();
-
         final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
         sorter.setRowFilter(new RowFilter<>() {
             @Override
             public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
 
-                String cellPlate = entry.getStringValue(4).replace("\u200E", "").trim();
-                boolean plateMatch = true;
-                if (plateFilterActive) {
-                    plateMatch = cellPlate.contains(plateText)
-                            || (!plateDisplayFromStorage.isEmpty() && cellPlate.contains(plateDisplayFromStorage));
-                }
-
+                boolean plateMatch = plateText.isEmpty() || entry.getStringValue(4).contains(plateText);
                 boolean empMatch = empText.isEmpty() || entry.getStringValue(0).contains(empText);
-
                 boolean dateMatch = true;
 
                 if (!dateText.contains("_")) {
                     try {
                         LocalDateTime filterDate = LocalDateTime.parse(dateText, formatter);
-
                         LocalDateTime pickupDate = LocalDateTime.parse(entry.getStringValue(5), formatter);
-
                         String returnStr = entry.getStringValue(6);
                         LocalDateTime returnDate = (returnStr == null || returnStr.isEmpty() || returnStr.contains("منتظر"))
                                 ? null
@@ -183,9 +162,7 @@ public class ReportFrame extends JFrame {
 
                         boolean pickupCondition = pickupDate.isBefore(filterDate);
                         boolean returnCondition = (returnDate == null) || returnDate.isAfter(filterDate);
-
                         dateMatch = pickupCondition && returnCondition;
-
                     } catch (Exception ex) {
                         // ignore
                     }
