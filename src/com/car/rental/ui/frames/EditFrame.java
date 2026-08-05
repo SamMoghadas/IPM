@@ -8,7 +8,6 @@ import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.List;
 
 public class EditFrame extends JFrame {
     public enum EditMode {
@@ -41,7 +40,7 @@ public class EditFrame extends JFrame {
     private JTextField nameField;
     private JTextField phoneField;
     private JComboBox<String> fingerCombo;
-    private JButton reEnrollButton;
+    private JButton addFingerButton;
     private JLabel employeeStatusLabel;
 
     private JButton saveButton;
@@ -68,7 +67,6 @@ public class EditFrame extends JFrame {
         initLayout();
         initActions();
         fillFields();
-        loadEnrolledFingerFromDevice();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -136,14 +134,16 @@ public class EditFrame extends JFrame {
         phoneField.setHorizontalAlignment(JTextField.LEFT);
 
         fingerCombo = new JComboBox<>(FINGER_LABELS);
-        // temporary default until device reports enrolled finger
         fingerCombo.setSelectedIndex(6);
+        fingerCombo.setToolTipText("انگشتی که می‌خواهید به پروفایل اضافه شود را انتخاب کنید");
 
-        reEnrollButton = new JButton("ثبت مجدد اثر انگشت");
-        reEnrollButton.setBackground(new Color(180, 100, 0));
-        reEnrollButton.setForeground(Color.WHITE);
+        addFingerButton = new JButton("افزودن اثر انگشت");
+        addFingerButton.setBackground(new Color(180, 100, 0));
+        addFingerButton.setForeground(Color.WHITE);
+        addFingerButton.setToolTipText(
+                "یک اثر انگشت جدید به همین کاربر روی دستگاه اضافه می‌کند (پروفایل پاک نمی‌شود)");
 
-        employeeStatusLabel = new JLabel(" ");
+        employeeStatusLabel = new JLabel("انگشت موردنظر را انتخاب و «افزودن اثر انگشت» را بزنید");
         employeeStatusLabel.setForeground(new Color(80, 80, 80));
 
         saveButton = new JButton("ذخیره تغییرات");
@@ -204,7 +204,7 @@ public class EditFrame extends JFrame {
         row++;
 
         gbc.gridy = row;
-        panel.add(reEnrollButton, gbc);
+        panel.add(addFingerButton, gbc);
 
         add(panel, BorderLayout.CENTER);
 
@@ -221,7 +221,7 @@ public class EditFrame extends JFrame {
             saveButton.addActionListener(e -> saveCarChanges());
         } else {
             saveButton.addActionListener(e -> saveEmployeeChanges());
-            reEnrollButton.addActionListener(e -> reEnrollFingerprint());
+            addFingerButton.addActionListener(e -> addFingerprint());
         }
     }
 
@@ -234,61 +234,6 @@ public class EditFrame extends JFrame {
             nameField.setText(employee.getName() != null ? employee.getName() : "");
             phoneField.setText(employee.getPhone() != null ? employee.getPhone() : "");
         }
-    }
-
-    /** Query device for which fingers are enrolled and select the first in the combo. */
-    private void loadEnrolledFingerFromDevice() {
-        employeeStatusLabel.setForeground(new Color(180, 120, 0));
-        employeeStatusLabel.setText("در حال خواندن انگشت ثبت‌شده از دستگاه...");
-        fingerCombo.setEnabled(false);
-
-        new SwingWorker<List<Integer>, Void>() {
-            @Override
-            protected List<Integer> doInBackground() throws Exception {
-                fingerprintService.connect();
-                return fingerprintService.getEnrolledFingerIndexes(employee.getDeviceUserId());
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    List<Integer> fingers = get();
-                    if (fingers != null && !fingers.isEmpty()) {
-                        int primary = fingers.get(0);
-                        if (primary >= 0 && primary <= 9) {
-                            fingerCombo.setSelectedIndex(primary);
-                        }
-                        if (fingers.size() == 1) {
-                            employeeStatusLabel.setForeground(new Color(0, 128, 0));
-                            employeeStatusLabel.setText("انگشت فعلی روی دستگاه: " + FINGER_LABELS[primary]);
-                        } else {
-                            employeeStatusLabel.setForeground(new Color(0, 128, 0));
-                            employeeStatusLabel.setText(
-                                    "انگشت‌های ثبت‌شده: " + fingers + " — انتخاب‌شده: " + primary);
-                        }
-                    } else {
-                        employeeStatusLabel.setForeground(new Color(180, 120, 0));
-                        employeeStatusLabel.setText(
-                                "انگشت ثبت‌شده‌ای روی دستگاه پیدا نشد؛ مقدار پیش‌فرض را می‌توانید عوض کنید");
-                    }
-                } catch (Exception ex) {
-                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                    String msg = cause.getMessage() != null ? cause.getMessage() : cause.toString();
-                    employeeStatusLabel.setForeground(Color.RED);
-                    employeeStatusLabel.setText("خواندن انگشت از دستگاه ناموفق — پیش‌فرض استفاده شد");
-                    // keep default index; optional soft log
-                    System.err.println("loadEnrolledFingerFromDevice: " + msg);
-                } finally {
-                    fingerCombo.setEnabled(true);
-                    try {
-                        if (fingerprintService != null && fingerprintService.isConnected()) {
-                            fingerprintService.disconnect();
-                        }
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-        }.execute();
     }
 
     private int addRow(JPanel panel, GridBagConstraints gbc, int row,
@@ -402,13 +347,11 @@ public class EditFrame extends JFrame {
         }.execute();
     }
 
-    private void reEnrollFingerprint() {
-        String name = nameField.getText().strip();
-        if (name.isEmpty() || !name.matches(".*[A-Za-z].*")) {
-            JOptionPane.showMessageDialog(this, "ابتدا نام انگلیسی معتبر وارد کنید!");
-            return;
-        }
-
+    /**
+     * Adds a fingerprint template for the selected finger without deleting the user
+     * or other already-enrolled fingers.
+     */
+    private void addFingerprint() {
         int fingerIndex = fingerCombo.getSelectedIndex();
         String deviceUserId = employee.getDeviceUserId();
 
@@ -422,7 +365,7 @@ public class EditFrame extends JFrame {
                 publish("اتصال به دستگاه...");
                 fingerprintService.connect();
                 publish("ثبت اثر انگشت — انگشت را چند بار روی سنسور بگذارید");
-                fingerprintService.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
+                fingerprintService.enrollFingerOnly(deviceUserId, fingerIndex);
                 return null;
             }
 
@@ -437,21 +380,17 @@ public class EditFrame extends JFrame {
             protected void done() {
                 try {
                     get();
-                    employee.setName(name);
-                    employee.setPhone(phoneField.getText().strip());
-                    db.updateEmployee(employee);
-
                     employeeStatusLabel.setForeground(new Color(0, 128, 0));
-                    employeeStatusLabel.setText("اثر انگشت با موفقیت ثبت شد — انگشت: "
-                            + FINGER_LABELS[fingerIndex]);
-                    JOptionPane.showMessageDialog(EditFrame.this, "اثر انگشت به‌روز شد ✅");
+                    employeeStatusLabel.setText("اثر انگشت اضافه شد: " + FINGER_LABELS[fingerIndex]);
+                    JOptionPane.showMessageDialog(EditFrame.this,
+                            "اثر انگشت به پروفایل اضافه شد ✅\n" + FINGER_LABELS[fingerIndex]);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage() != null ? cause.getMessage() : cause.toString();
                     employeeStatusLabel.setForeground(Color.RED);
-                    employeeStatusLabel.setText("ثبت اثر انگشت ناموفق");
+                    employeeStatusLabel.setText("افزودن اثر انگشت ناموفق");
                     JOptionPane.showMessageDialog(EditFrame.this,
-                            "ثبت مجدد اثر انگشت ناموفق بود:\n" + msg,
+                            "افزودن اثر انگشت ناموفق بود:\n" + msg,
                             "خطا",
                             JOptionPane.ERROR_MESSAGE);
                 } finally {
@@ -471,7 +410,7 @@ public class EditFrame extends JFrame {
         nameField.setEnabled(enabled);
         phoneField.setEnabled(enabled);
         fingerCombo.setEnabled(enabled);
-        reEnrollButton.setEnabled(enabled);
+        addFingerButton.setEnabled(enabled);
         saveButton.setEnabled(enabled);
         cancelButton.setEnabled(enabled);
     }
