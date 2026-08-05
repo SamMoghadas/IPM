@@ -6,10 +6,11 @@ public class Car {
     private String color;
     private String status;
 
-    public Car(String model, String color, String plate) {
+    /** Standard order: model, plate, color */
+    public Car(String model, String plate, String color) {
         this.model = model;
-        this.color = color;
         this.plate = plate;
+        this.color = color;
     }
 
     public Car(String model, String plate, String color, String status) {
