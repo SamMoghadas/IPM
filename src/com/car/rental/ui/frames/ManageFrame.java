@@ -1,13 +1,10 @@
 package com.car.rental.ui.frames;
 
-import com.car.rental.config.SpringContext;
-import com.car.rental.db.DatabaseManager;
+import com.car.rental.config.ServiceLookup;
 import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.service.CarService;
 import com.car.rental.service.EmployeeService;
-import com.car.rental.service.FingerprintService;
-import com.car.rental.service.ZkFingerprintService;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -25,32 +22,11 @@ public class ManageFrame extends JFrame {
     private DefaultTableModel carModel, employeeModel;
 
     public ManageFrame() {
-        carService = resolveCarService();
-        employeeService = resolveEmployeeService();
+        carService = ServiceLookup.get(CarService.class);
+        employeeService = ServiceLookup.get(EmployeeService.class);
         initializeUI();
         loadDataFromDB();
         setVisible(true);
-    }
-
-    private static CarService resolveCarService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(CarService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        return new CarService(new DatabaseManager());
-    }
-
-    private static EmployeeService resolveEmployeeService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(EmployeeService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        FingerprintService fp = new ZkFingerprintService("192.168.1.200", 4370);
-        return new EmployeeService(new DatabaseManager(), fp);
     }
 
     private void initializeUI() {
@@ -163,11 +139,13 @@ public class ManageFrame extends JFrame {
         carModel.setRowCount(0);
         employeeModel.setRowCount(0);
         try {
-            for (String car : carService.getAllCars()) {
-                String[] parts = car.split(" - ");
-                if (parts.length < 4) continue;
-                String status = parts[3].equals("1") ? "در ماموریت" : "آزاد";
-                carModel.addRow(new Object[]{parts[0], parts[1], parts[2], status});
+            for (Car car : carService.getAllCars()) {
+                carModel.addRow(new Object[]{
+                        car.getModel(),
+                        car.getColor(),
+                        car.getPlate(),
+                        car.getStatus() != null ? car.getStatus() : ""
+                });
             }
             List<Employee> employees = employeeService.getAllEmployees();
             for (Employee emp : employees) {
