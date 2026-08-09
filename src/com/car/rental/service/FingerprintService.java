@@ -17,12 +17,8 @@ public interface FingerprintService {
 
     /**
      * Start listening for the next successful verification (one-shot).
-     * When a finger is verified, onVerified is called once, then listening stops.
-     *
-     * @param timeoutSeconds max wait time in seconds
-     * @param onVerified     success callback with device user id + device time
-     * @param onTimeout      called if no verification within timeout
-     * @param onError        device / connection errors while listening
+     * Implementations should use a short-lived connection and release the device
+     * when verification finishes, times out, or is cancelled.
      */
     void listenForVerification(
             int timeoutSeconds,
@@ -31,19 +27,26 @@ public interface FingerprintService {
             Consumer<FingerprintException> onError
     );
 
-    /** Cancel an ongoing listenForVerification. */
     void cancelListen();
 
     List<DeviceUser> getUsers() throws FingerprintException;
 
     void createUser(String deviceUserId, String name) throws FingerprintException;
 
+    void updateUserName(String deviceUserId, String name) throws FingerprintException;
+
     void deleteUser(String deviceUserId) throws FingerprintException;
 
     /**
-     * Start fingerprint enrollment on the device.
-     * The employee must place the finger on the sensor (usually 3 times).
+     * Create user on device and enroll one finger (blocking until done or failed).
+     * On enroll failure the implementation should roll back the device user when possible.
      */
+    void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex)
+            throws FingerprintException;
+
+    /** Enroll an additional finger for an existing device user (blocking). */
+    void enrollFingerOnly(String deviceUserId, int fingerIndex) throws FingerprintException;
+
     void startEnroll(String deviceUserId, int fingerIndex,
                      Consumer<EnrollResult> onFinished,
                      Consumer<FingerprintException> onError) throws FingerprintException;
