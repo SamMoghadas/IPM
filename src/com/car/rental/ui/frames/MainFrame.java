@@ -4,8 +4,10 @@ import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.service.CarService;
 import com.car.rental.service.FingerprintException;
 import com.car.rental.service.FingerprintService;
+import com.car.rental.service.RentalService;
 import com.car.rental.service.VerificationResult;
 import com.car.rental.service.ZkFingerprintService;
 
@@ -22,7 +24,8 @@ public class MainFrame extends JFrame {
     private static final int FP_TIMEOUT_SECONDS = 40;
     private static final Logger logger = Logger.getLogger(MainFrame.class.getName());
 
-    private final DatabaseManager db;
+    private final CarService carService;
+    private final RentalService rentalService;
     private final FingerprintService fingerprintService;
 
     private JComboBox<String> carCombo;
@@ -46,13 +49,13 @@ public class MainFrame extends JFrame {
     private RentalRecord returnActiveRental;
 
     public MainFrame() {
-        this(resolveDatabaseManager(), resolveFingerprintService());
+        this(resolveCarService(), resolveRentalService(), resolveFingerprintService());
     }
 
-    public MainFrame(DatabaseManager db, FingerprintService fingerprintService) {
-        this.db = db;
+    public MainFrame(CarService carService, RentalService rentalService, FingerprintService fingerprintService) {
+        this.carService = carService;
+        this.rentalService = rentalService;
         this.fingerprintService = fingerprintService;
-        db.initDatabase();
         createMainUI();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -67,14 +70,24 @@ public class MainFrame extends JFrame {
         });
     }
 
-    private static DatabaseManager resolveDatabaseManager() {
+    private static CarService resolveCarService() {
         if (SpringContext.isActive()) {
             try {
-                return SpringContext.getBean(DatabaseManager.class);
+                return SpringContext.getBean(CarService.class);
             } catch (Exception ignored) {
             }
         }
-        return new DatabaseManager();
+        return new CarService(new DatabaseManager());
+    }
+
+    private static RentalService resolveRentalService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(RentalService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new RentalService(new DatabaseManager());
     }
 
     private static FingerprintService resolveFingerprintService() {
@@ -264,7 +277,7 @@ public class MainFrame extends JFrame {
 
     private void onPickupVerified(VerificationResult result) {
         try {
-            Employee emp = db.findByDeviceUserId(result.getDeviceUserId());
+            Employee emp = rentalService.findEmployeeByDeviceUserId(result.getDeviceUserId());
             if (emp == null) {
                 pickupStatusLabel.setText("کارمند با شناسه " + result.getDeviceUserId() + " در سیستم ثبت نشده است");
                 pickupStatusLabel.setForeground(Color.RED);
@@ -333,7 +346,7 @@ public class MainFrame extends JFrame {
             String carPlate = selectedCar[2];
             String pickupTime = formatDeviceTime(pickupDeviceTime);
 
-            db.insertRental(pickupDeviceUserId, carPlate, pickupTime, dest);
+            rentalService.pickup(pickupDeviceUserId, carPlate, pickupTime, dest);
 
             JOptionPane.showMessageDialog(this,
                     "ماشین تحویل داده شد ✅\n" +
@@ -385,7 +398,7 @@ public class MainFrame extends JFrame {
 
     private void onReturnVerified(VerificationResult result) {
         try {
-            Employee emp = db.findByDeviceUserId(result.getDeviceUserId());
+            Employee emp = rentalService.findEmployeeByDeviceUserId(result.getDeviceUserId());
             if (emp == null) {
                 returnStatusLabel.setText("کارمند با شناسه " + result.getDeviceUserId() + " در سیستم ثبت نشده است");
                 returnStatusLabel.setForeground(Color.RED);
@@ -393,7 +406,7 @@ public class MainFrame extends JFrame {
                 return;
             }
 
-            RentalRecord active = db.getActiveRentalByDeviceUserId(result.getDeviceUserId());
+            RentalRecord active = rentalService.getActiveRentalByDeviceUserId(result.getDeviceUserId());
             if (active == null) {
                 returnStatusLabel.setText(emp.getName() + " اجاره فعالی ندارد");
                 returnStatusLabel.setForeground(Color.RED);
@@ -433,7 +446,7 @@ public class MainFrame extends JFrame {
         fingerprintService.cancelListen();
         resetReturnVerifiedState();
         returnStatusLabel.setText("احراز هویت لغو شد");
-        returnStatusLabel.setForeground(new Color(80, 80, 80));
+        returnStatusLabel.setForeground(new flat.Color(80, 80, 80));
         setReturnListeningUi(false);
     }
 
@@ -445,7 +458,7 @@ public class MainFrame extends JFrame {
 
         try {
             String returnTime = formatDeviceTime(returnDeviceTime);
-            boolean ok = db.returnCarByDeviceUserId(returnDeviceUserId, returnTime);
+            boolean ok = rentalService.returnCar(returnDeviceUserId, returnTime);
             if (ok) {
                 JOptionPane.showMessageDialog(this,
                         "بازگشت ثبت شد ✅\n" +
@@ -494,7 +507,7 @@ public class MainFrame extends JFrame {
     public void loadCars() {
         carCombo.removeAllItems();
         try {
-            for (String car : db.getAvailableCars()) {
+            for (String car : carService.getAvailableCars()) {
                 carCombo.addItem(car);
             }
         } catch (SQLException e) {
@@ -523,7 +536,6 @@ public class MainFrame extends JFrame {
         return b;
     }
 
-    /** Prefer {@link com.car.rental.SamanApplication} so Spring context is active. */
     public static void main(String[] args) {
         com.car.rental.SamanApplication.main(args);
     }
