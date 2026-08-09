@@ -1,26 +1,61 @@
 package com.car.rental.db;
 
-import com.car.rental.util.DataChangeCallback;
+import com.car.rental.config.SpringContext;
 import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.util.DataChangeCallback;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
-import java.sql.*;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * Data access layer. Prefer obtaining this bean from Spring.
+ * Legacy {@code new DatabaseManager()} still works: it reuses the Spring DataSource
+ * when the context is active, otherwise falls back to a direct SQLite URL.
+ */
+@Service
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
     private static final int DEVICE_USER_ID_START = 1001;
-    private static Connection connection;
+    private static final String FALLBACK_URL = "jdbc:sqlite:IPMCarRental.db";
+
+    private final DataSource dataSource;
+
+    @Autowired
+    public DatabaseManager(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    /** Legacy no-arg constructor used by existing Swing frames. */
+    public DatabaseManager() {
+        DataSource ds = null;
+        if (SpringContext.isActive()) {
+            try {
+                ds = SpringContext.getBean(DataSource.class);
+            } catch (Exception ignored) {
+            }
+        }
+        if (ds != null) {
+            this.dataSource = ds;
+        } else {
+            this.dataSource = new SimpleDataSource(FALLBACK_URL);
+        }
+    }
 
     private Connection getConnection() throws SQLException {
-        if (connection == null || connection.isClosed()) {
-            connection = DriverManager.getConnection("jdbc:sqlite:IPMCarRental.db");
-        }
-        return connection;
+        return dataSource.getConnection();
     }
 
     public void initDatabase() {
@@ -259,17 +294,14 @@ public class DatabaseManager {
         }
     }
 
-    /**
-     * @param excludePlate plate of the car being edited (may stay the same); null for new cars
-     */
     public boolean isPlateTaken(String plate, String excludePlate) throws SQLException {
         if (plate == null || plate.isBlank()) {
             return false;
         }
-        String sql = "SELECT 1 FROM CarTable WHERE plate = ? AND is_deleted = 0";
         if (excludePlate != null && !excludePlate.isBlank() && excludePlate.equals(plate)) {
-            return false; // same plate, same car
+            return false;
         }
+        String sql = "SELECT 1 FROM CarTable WHERE plate = ? AND is_deleted = 0";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, plate);
@@ -277,7 +309,6 @@ public class DatabaseManager {
                 if (!rs.next()) {
                     return false;
                 }
-                // exists — if exclude is different, it's taken by another car
                 return excludePlate == null || !excludePlate.equals(plate);
             }
         }
@@ -417,51 +448,52 @@ public class DatabaseManager {
         String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 0, " +
                 "updated_at = datetime('now','localtime') WHERE id = ?";
 
-        Connection conn = getConnection();
-        conn.setAutoCommit(false);
-        try {
-            int rentalId;
-            int carId;
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                int rentalId;
+                int carId;
 
-            try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
-                selectStmt.setInt(1, emp.getId());
-                try (ResultSet rs = selectStmt.executeQuery()) {
-                    if (!rs.next()) {
-                        conn.rollback();
-                        return false;
+                try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+                    selectStmt.setInt(1, emp.getId());
+                    try (ResultSet rs = selectStmt.executeQuery()) {
+                        if (!rs.next()) {
+                            conn.rollback();
+                            return false;
+                        }
+                        rentalId = rs.getInt("id");
+                        carId = rs.getInt("car_id");
                     }
-                    rentalId = rs.getInt("id");
-                    carId = rs.getInt("car_id");
                 }
-            }
 
-            try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
-                 PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
-                 PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
+                try (PreparedStatement updateRentalStmt = conn.prepareStatement(updateRentalSql);
+                     PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
+                     PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
 
-                updateRentalStmt.setString(1, returnDate);
-                updateRentalStmt.setInt(2, rentalId);
-                updateRentalStmt.executeUpdate();
+                    updateRentalStmt.setString(1, returnDate);
+                    updateRentalStmt.setInt(2, rentalId);
+                    updateRentalStmt.executeUpdate();
 
-                updateCarStmt.setInt(1, carId);
-                updateCarStmt.executeUpdate();
+                    updateCarStmt.setInt(1, carId);
+                    updateCarStmt.executeUpdate();
 
-                updateEmpStmt.setInt(1, emp.getId());
-                updateEmpStmt.executeUpdate();
+                    updateEmpStmt.setInt(1, emp.getId());
+                    updateEmpStmt.executeUpdate();
 
-                conn.commit();
-                return true;
-            }
-        } catch (SQLException e) {
-            try {
-                conn.rollback();
-            } catch (SQLException ignored) {
-            }
-            throw e;
-        } finally {
-            try {
-                conn.setAutoCommit(true);
-            } catch (SQLException ignored) {
+                    conn.commit();
+                    return true;
+                }
+            } catch (SQLException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
+                throw e;
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
             }
         }
     }
@@ -522,6 +554,35 @@ public class DatabaseManager {
                 }
                 return null;
             }
+        }
+    }
+
+    /** Minimal DataSource for offline / non-Spring fallback. */
+    private static final class SimpleDataSource implements DataSource {
+        private final String url;
+
+        SimpleDataSource(String url) {
+            this.url = url;
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            return DriverManager.getConnection(url);
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws SQLException {
+            return getConnection();
+        }
+
+        @Override public <T> T unwrap(Class<T> iface) { throw new UnsupportedOperationException(); }
+        @Override public boolean isWrapperFor(Class<?> iface) { return false; }
+        @Override public java.io.PrintWriter getLogWriter() { return null; }
+        @Override public void setLogWriter(java.io.PrintWriter out) { }
+        @Override public void setLoginTimeout(int seconds) { }
+        @Override public int getLoginTimeout() { return 0; }
+        @Override public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
         }
     }
 }
