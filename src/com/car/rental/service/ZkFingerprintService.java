@@ -18,11 +18,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * ZKTeco TCP client.
+ * ZKTeco TCP client (port 4370).
  * <p>
- * Enroll uses realtime events (STARTENROLL).
- * Verification intentionally disconnects so the terminal can scan in standalone
- * mode, then periodically re-reads attendance logs for a new punch.
+ * Verification uses the same realtime path that already worked in ZkTestMain:
+ * stay connected, ENABLEDEVICE, REG_EVENT, wait for ATTLOG.
+ * Enroll uses STARTENROLL + realtime EF_ENROLLFINGER.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -37,22 +37,18 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_PREPARE_DATA = 1500;
     private static final int CMD_DATA = 1501;
     private static final int CMD_REG_EVENT = 500;
-    private static final int CMD_ATTLOG_RRQ = 13;
     private static final int CMD_USER_WRQ = 8;
     private static final int CMD_USERTEMP_RRQ = 9;
     private static final int CMD_DELETE_USER = 18;
     private static final int CMD_STARTENROLL = 61;
 
+    private static final int EF_ATTLOG = 1;
     private static final int EF_FINGER = 2;
     private static final int EF_ENROLLUSER = 4;
     private static final int EF_ENROLLFINGER = 8;
     private static final int EF_FPFTR = 256;
 
     private static final int ENROLL_TIMEOUT_SECONDS = 60;
-    /** How long to leave the device completely alone so the user can punch. */
-    private static final int VERIFY_FREE_MS = 5000;
-    /** Settle time after disconnect before the first free window. */
-    private static final int VERIFY_SETTLE_MS = 2000;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -138,11 +134,6 @@ public class ZkFingerprintService implements FingerprintService {
     @Override
     public synchronized void disconnect() {
         cancelListen();
-        disconnectQuietly();
-    }
-
-    /** Disconnect without cancelling an in-progress listen/poll task. */
-    private synchronized void disconnectQuietly() {
         if (!connected.get()) {
             return;
         }
@@ -165,12 +156,8 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Wait for a local fingerprint punch on the terminal.
-     * <ol>
-     *   <li>Snapshot attendance buffer size</li>
-     *   <li>Fully disconnect and leave the device alone for several seconds</li>
-     *   <li>Briefly reconnect only to check if a new log appeared</li>
-     * </ol>
+     * Realtime verification — same approach as the working ZkTestMain:
+     * stay connected, enable device, register events, wait for ATTLOG.
      */
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -181,332 +168,173 @@ public class ZkFingerprintService implements FingerprintService {
         listening.set(true);
 
         listenTask = executor.submit(() -> {
+            int previousTimeout = 8000;
             try {
-                logger.info("Verification started (timeout=" + timeoutSeconds
-                        + "s, freeWindow=" + VERIFY_FREE_MS + "ms)");
+                logger.info("Realtime verification started (timeout=" + timeoutSeconds + "s)");
 
                 if (!isConnected()) {
                     connect();
                 }
 
-                AttLogSnapshot baseline = readAttendanceSnapshot();
-                logger.info("Attendance baseline rawBytes=" + baseline.rawSize
-                        + " validRecords=" + baseline.records.size());
-
-                // Leave device in normal standalone mode for punching
-                try {
+                synchronized (ZkFingerprintService.this) {
                     enableDevice();
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "ENABLEDEVICE before free window failed", e);
                 }
-                disconnectQuietly();
-                logger.info("Device FREE — place finger on the terminal now");
 
-                sleepQuiet(VERIFY_SETTLE_MS);
+                // Register all realtime events (same as successful tests)
+                byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
+                byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
+                if (regReply == null || getCommand(regReply) != CMD_ACK_OK) {
+                    throw new FingerprintException("Failed to register realtime events");
+                }
+                logger.info("REG_EVENT OK — put finger on the device sensor now");
+
+                previousTimeout = socket.getSoTimeout();
+                socket.setSoTimeout(1000);
 
                 long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
 
                 while (listening.get() && System.currentTimeMillis() < deadline) {
-                    // Long free window: device is disconnected, sensor should work
-                    sleepQuiet(VERIFY_FREE_MS);
-                    if (!listening.get()) {
-                        break;
-                    }
-
                     try {
-                        connect();
-                        AttLogSnapshot snap = readAttendanceSnapshot();
-                        // Re-enable and drop connection again immediately
-                        try {
-                            enableDevice();
-                        } catch (Exception ignored) {
+                        byte[] packet = readPacket();
+                        if (packet == null) {
+                            continue;
                         }
-                        disconnectQuietly();
 
-                        if (snap.rawSize > baseline.rawSize) {
-                            VerificationResult newer = pickNewestValid(snap.records);
-                            if (newer == null) {
-                                newer = parseTailRecord(snap.rawBuffer, baseline.rawSize);
-                            }
-                            if (newer != null) {
-                                logger.info("New punch userId=" + newer.getDeviceUserId()
-                                        + " time=" + newer.getDeviceTime()
-                                        + " raw " + baseline.rawSize + "->" + snap.rawSize);
-                                listening.set(false);
-                                if (onVerified != null) {
-                                    onVerified.accept(newer);
-                                }
-                                return;
-                            }
-                            logger.warning("Buffer grew but no valid userId parsed. raw "
-                                    + baseline.rawSize + "->" + snap.rawSize);
-                            baseline = snap;
-                        } else {
-                            logger.info("Still waiting for punch (rawBytes=" + snap.rawSize + ")");
+                        int cmd = getCommand(packet);
+                        if (cmd != CMD_REG_EVENT) {
+                            logger.info("Verify ignore cmd=" + cmd + " len=" + packet.length);
+                            continue;
                         }
-                    } catch (Exception pollEx) {
-                        logger.log(Level.WARNING, "Attendance check failed, will retry", pollEx);
-                        try {
-                            disconnectQuietly();
-                        } catch (Exception ignored) {
+
+                        int eventCode = getSessionId(packet);
+                        logger.info("Verify event code=" + eventCode + " len=" + packet.length
+                                + " hex=" + toHex(packet, 0, Math.min(48, packet.length)));
+
+                        // Always ACK so device keeps streaming events
+                        sendAck();
+
+                        // Finger placed / quality — keep waiting for ATTLOG
+                        if (eventCode == EF_FINGER || eventCode == EF_FPFTR
+                                || (eventCode & EF_FPFTR) != 0) {
+                            continue;
                         }
+
+                        boolean isAttLog = eventCode == EF_ATTLOG || (eventCode & EF_ATTLOG) != 0;
+                        if (!isAttLog) {
+                            continue;
+                        }
+
+                        VerificationResult result = parseRealtimeAttLog(packet);
+                        if (result != null) {
+                            logger.info("ATTLOG userId=" + result.getDeviceUserId()
+                                    + " time=" + result.getDeviceTime());
+                            listening.set(false);
+                            if (onVerified != null) {
+                                onVerified.accept(result);
+                            }
+                            return;
+                        }
+                        logger.warning("ATTLOG event but could not parse userId; len="
+                                + packet.length);
+                    } catch (java.net.SocketTimeoutException ste) {
+                        // poll until deadline
                     }
                 }
 
                 if (listening.get()) {
                     listening.set(false);
-                    logger.info("Verification timed out");
+                    logger.info("Realtime verification timed out");
                     if (onTimeout != null) {
                         onTimeout.run();
                     }
                 }
             } catch (Exception e) {
                 listening.set(false);
-                logger.log(Level.SEVERE, "Verification error", e);
-                try {
-                    disconnectQuietly();
-                } catch (Exception ignored) {
-                }
+                logger.log(Level.SEVERE, "Realtime verification error", e);
                 if (onError != null) {
-                    onError.accept(new FingerprintException("Error while verifying: " + e.getMessage(), e));
+                    onError.accept(new FingerprintException(
+                            "Error while verifying: " + e.getMessage(), e));
+                }
+            } finally {
+                try {
+                    if (socket != null) {
+                        socket.setSoTimeout(previousTimeout);
+                    }
+                } catch (Exception ignored) {
                 }
             }
         });
     }
 
-    private void sleepQuiet(int ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private static VerificationResult pickNewestValid(List<VerificationResult> records) {
-        if (records == null || records.isEmpty()) {
-            return null;
-        }
-        return records.get(records.size() - 1);
-    }
-
-    private VerificationResult parseTailRecord(byte[] buffer, int fromOffset) {
-        if (buffer == null || fromOffset < 0 || fromOffset >= buffer.length) {
-            return null;
-        }
-        int[] sizes = {40, 36, 32, 16};
-        for (int rs : sizes) {
-            if (buffer.length >= rs) {
-                int start = buffer.length - rs;
-                VerificationResult r = parseAttendanceRecord(buffer, start, rs);
-                if (r != null) {
-                    return r;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static final class AttLogSnapshot {
-        final int rawSize;
-        final byte[] rawBuffer;
-        final List<VerificationResult> records;
-
-        AttLogSnapshot(byte[] rawBuffer, List<VerificationResult> records) {
-            this.rawBuffer = rawBuffer == null ? new byte[0] : rawBuffer;
-            this.rawSize = this.rawBuffer.length;
-            this.records = records == null ? new ArrayList<>() : records;
-        }
-    }
-
     /**
-     * Read attendance without DISABLEDEVICE so the sensor is not locked
-     * longer than necessary between free windows.
+     * Parse realtime ATTLOG payload (command packet, data at offset 16).
+     * Handles string user ids and numeric uids seen on ZMM100.
      */
-    private synchronized AttLogSnapshot readAttendanceSnapshot()
-            throws IOException, FingerprintException {
-        ensureConnected();
-        byte[] reply = sendCommand(CMD_ATTLOG_RRQ, new byte[0]);
-        if (reply == null) {
-            return new AttLogSnapshot(new byte[0], new ArrayList<>());
-        }
-        int cmd = getCommand(reply);
-        if (cmd == CMD_ACK_OK || cmd == CMD_ACK_ERROR) {
-            return new AttLogSnapshot(new byte[0], new ArrayList<>());
-        }
-        if (cmd != CMD_PREPARE_DATA) {
-            logger.warning("ATTLOG_RRQ unexpected cmd=" + cmd);
-            return new AttLogSnapshot(new byte[0], new ArrayList<>());
-        }
-
-        int size = 0;
-        if (reply.length >= 20) {
-            size = (reply[16] & 0xFF)
-                    | ((reply[17] & 0xFF) << 8)
-                    | ((reply[18] & 0xFF) << 16)
-                    | ((reply[19] & 0xFF) << 24);
-        }
-        if (size <= 0) {
-            return new AttLogSnapshot(new byte[0], new ArrayList<>());
-        }
-
-        byte[] buffer = readDataBuffer(size);
-        List<VerificationResult> records = parseAttendanceBuffer(buffer);
-        return new AttLogSnapshot(buffer, records);
-    }
-
-    private byte[] readDataBuffer(int totalSize) throws IOException {
-        byte[] buffer = new byte[totalSize];
-        int offset = 0;
-        int previousTimeout = socket.getSoTimeout();
-        socket.setSoTimeout(5000);
+    private VerificationResult parseRealtimeAttLog(byte[] fullPacket) {
         try {
-            while (offset < totalSize) {
-                byte[] packet = readPacket();
-                if (packet == null) {
-                    break;
-                }
-                int cmd = getCommand(packet);
-                if (cmd == CMD_DATA) {
-                    int payloadLen = packet.length - 16;
-                    if (payloadLen > 0) {
-                        int copy = Math.min(payloadLen, totalSize - offset);
-                        System.arraycopy(packet, 16, buffer, offset, copy);
-                        offset += copy;
-                    }
-                    sendAck();
-                } else if (cmd == CMD_ACK_OK) {
-                    break;
-                } else {
-                    logger.fine("DATA read skip cmd=" + cmd);
-                    break;
-                }
-            }
-        } finally {
-            try {
-                socket.setSoTimeout(previousTimeout);
-            } catch (Exception ignored) {
-            }
-        }
-        if (offset < totalSize) {
-            byte[] trimmed = new byte[offset];
-            System.arraycopy(buffer, 0, trimmed, 0, offset);
-            return trimmed;
-        }
-        return buffer;
-    }
-
-    private List<VerificationResult> parseAttendanceBuffer(byte[] buffer) {
-        List<VerificationResult> list = new ArrayList<>();
-        if (buffer == null || buffer.length == 0) {
-            return list;
-        }
-
-        int[] candidates = {40, 36, 32, 16};
-        int bestSize = 0;
-        int bestValid = -1;
-        for (int c : candidates) {
-            if (buffer.length % c != 0) {
-                continue;
-            }
-            int valid = 0;
-            for (int i = 0; i + c <= buffer.length; i += c) {
-                if (parseAttendanceRecord(buffer, i, c) != null) {
-                    valid++;
-                }
-            }
-            if (valid > bestValid) {
-                bestValid = valid;
-                bestSize = c;
-            }
-        }
-        if (bestSize == 0) {
-            bestSize = 36;
-        }
-
-        for (int i = 0; i + bestSize <= buffer.length; i += bestSize) {
-            VerificationResult r = parseAttendanceRecord(buffer, i, bestSize);
-            if (r != null) {
-                list.add(r);
-            }
-        }
-
-        if (buffer.length >= 16) {
-            int dumpLen = Math.min(bestSize, Math.min(40, buffer.length));
-            logger.info("AttLog first-record hex (" + dumpLen + " bytes): "
-                    + toHex(buffer, 0, dumpLen)
-                    + " chosenSize=" + bestSize + " valid=" + list.size());
-        }
-        return list;
-    }
-
-    private VerificationResult parseAttendanceRecord(byte[] buf, int offset, int recordSize) {
-        try {
-            if (offset + recordSize > buf.length) {
+            int dataOffset = 16;
+            if (fullPacket.length <= dataOffset) {
                 return null;
             }
 
-            String userId = extractUserId(buf, offset, recordSize);
-            if (userId == null) {
+            // Try ASCII user id at start of payload
+            String userId = readAsciiId(fullPacket, dataOffset,
+                    Math.min(24, fullPacket.length - dataOffset));
+
+            // Some firmwares put uid as uint16/uint32 first
+            if (userId == null && fullPacket.length >= dataOffset + 2) {
+                int uid16 = (fullPacket[dataOffset] & 0xFF)
+                        | ((fullPacket[dataOffset + 1] & 0xFF) << 8);
+                if (uid16 >= 1 && uid16 <= 30000) {
+                    userId = String.valueOf(uid16);
+                }
+            }
+
+            // Offset +6 ASCII (same quirk as bulk 36-byte logs on this device)
+            if (userId == null && fullPacket.length >= dataOffset + 8) {
+                userId = readAsciiId(fullPacket, dataOffset + 6,
+                        Math.min(18, fullPacket.length - dataOffset - 6));
+            }
+
+            if (userId == null || userId.isEmpty()) {
                 return null;
             }
 
-            LocalDateTime time = extractTime(buf, offset, recordSize);
-            if (time == null) {
-                time = LocalDateTime.of(2000, 1, 1, 0, 0, 0);
-            }
-
+            LocalDateTime time = LocalDateTime.now();
             int verifyType = 1;
-            if (recordSize >= 27) {
-                verifyType = buf[offset + 26] & 0xFF;
+
+            // 6-byte wall time layouts
+            if (fullPacket.length >= dataOffset + 32) {
+                for (int rel : new int[]{26, 27, 24}) {
+                    LocalDateTime t = tryWallTime(fullPacket, dataOffset + rel);
+                    if (t != null) {
+                        time = t;
+                        break;
+                    }
+                }
+                verifyType = fullPacket[dataOffset + 24] & 0xFF;
+            }
+
+            // 4-byte ZK packed time
+            if (time.getYear() == LocalDateTime.now().getYear()
+                    && fullPacket.length >= dataOffset + 8) {
+                for (int rel : new int[]{4, 6, 27, fullPacket.length - dataOffset - 4}) {
+                    if (rel < 0) continue;
+                    if (dataOffset + rel + 4 <= fullPacket.length) {
+                        LocalDateTime t = decodeZkTime(fullPacket, dataOffset + rel);
+                        if (t != null) {
+                            time = t;
+                            break;
+                        }
+                    }
+                }
             }
 
             return new VerificationResult(userId, time, verifyType);
         } catch (Exception e) {
+            logger.log(Level.WARNING, "parseRealtimeAttLog failed", e);
             return null;
         }
-    }
-
-    /**
-     * ZMM100 observed 36-byte layout (from device hex dump):
-     * <pre>
-     *  0-1  : uid (uint16 LE)
-     *  2-5  : reserved / status
-     *  6+   : ASCII user_id (null-terminated) when present
-     *  end  : ZK packed time
-     * </pre>
-     * Also supports classic 40-byte string-at-start layouts.
-     */
-    private String extractUserId(byte[] buf, int offset, int recordSize) {
-        // Prefer printable ASCII pin at offset 6 (ZMM100 36-byte samples)
-        if (recordSize >= 16) {
-            String at6 = readAsciiId(buf, offset + 6, Math.min(18, recordSize - 6));
-            if (at6 != null) {
-                return at6;
-            }
-        }
-
-        // Classic: ASCII at offset 0 (up to 24)
-        String at0 = readAsciiId(buf, offset, Math.min(24, recordSize));
-        if (at0 != null) {
-            return at0;
-        }
-
-        // Classic: ASCII at offset 2 (after uint16 uid)
-        if (recordSize >= 10) {
-            String at2 = readAsciiId(buf, offset + 2, Math.min(16, recordSize - 2));
-            if (at2 != null) {
-                return at2;
-            }
-        }
-
-        // Fallback: internal uid as decimal (only if looks like a real uid field)
-        if (recordSize >= 2) {
-            int uid = (buf[offset] & 0xFF) | ((buf[offset + 1] & 0xFF) << 8);
-            if (uid >= 1 && uid <= 30000) {
-                return String.valueOf(uid);
-            }
-        }
-        return null;
     }
 
     private String readAsciiId(byte[] buf, int off, int maxLen) {
@@ -536,26 +364,6 @@ public class ZkFingerprintService implements FingerprintService {
                 || (b >= 'A' && b <= 'Z')
                 || (b >= 'a' && b <= 'z')
                 || b == '_' || b == '-';
-    }
-
-    private LocalDateTime extractTime(byte[] buf, int offset, int recordSize) {
-        // 6-byte wall clock variants
-        if (recordSize >= 32) {
-            for (int rel : new int[]{26, 27, 24, 28}) {
-                LocalDateTime t = tryWallTime(buf, offset + rel);
-                if (t != null) return t;
-            }
-        }
-        // 4-byte ZK packed time near end (common on 36-byte records)
-        if (recordSize >= 8) {
-            for (int rel : new int[]{recordSize - 6, recordSize - 5, recordSize - 4, 4, 6, 27, 30}) {
-                if (rel >= 0 && offset + rel + 4 <= offset + recordSize) {
-                    LocalDateTime t = decodeZkTime(buf, offset + rel);
-                    if (t != null) return t;
-                }
-            }
-        }
-        return null;
     }
 
     private LocalDateTime tryWallTime(byte[] buf, int off) {
