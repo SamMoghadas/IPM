@@ -1,7 +1,6 @@
 package com.car.rental.ui.frames;
 
-import com.car.rental.config.SpringContext;
-import com.car.rental.db.DatabaseManager;
+import com.car.rental.config.ServiceLookup;
 import com.car.rental.model.RentalRecord;
 import com.car.rental.service.RentalService;
 import com.car.rental.ui.components.PlateInputPanel;
@@ -80,18 +79,8 @@ public class ReportFrame extends JFrame {
         setVisible(true);
     }
 
-    private static RentalService resolveRentalService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(RentalService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        return new RentalService(new DatabaseManager());
-    }
-
     private void loadTable() {
-        RentalService rentalService = resolveRentalService();
+        RentalService rentalService = ServiceLookup.get(RentalService.class);
         try {
             List<RentalRecord> rentalRecords = rentalService.getRentalReport();
 
