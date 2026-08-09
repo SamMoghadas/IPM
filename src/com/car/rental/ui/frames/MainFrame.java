@@ -298,8 +298,6 @@ public class MainFrame extends JFrame {
     }
 
     private void cancelPickupAuth() {
-        fingerprintService.cancelListen();
-        releaseDevice();
         resetPickupVerifiedState();
         pickupStatusLabel.setText("احراز هویت لغو شد");
         pickupStatusLabel.setForeground(new Color(80, 80, 80));
@@ -348,6 +346,9 @@ public class MainFrame extends JFrame {
         pickupCancelButton.setEnabled(listening);
         if (listening) {
             pickupConfirmButton.setEnabled(false);
+        } else {
+            // Short-lived device session ends when auth finishes/cancels/times out
+            releaseDevice();
         }
         carCombo.setEnabled(!listening);
         destinationField.setEnabled(!listening);
@@ -421,8 +422,6 @@ public class MainFrame extends JFrame {
     }
 
     private void cancelReturnAuth() {
-        fingerprintService.cancelListen();
-        releaseDevice();
         resetReturnVerifiedState();
         returnStatusLabel.setText("احراز هویت لغو شد");
         returnStatusLabel.setForeground(new Color(80, 80, 80));
@@ -462,6 +461,8 @@ public class MainFrame extends JFrame {
         returnCancelButton.setEnabled(listening);
         if (listening) {
             returnConfirmButton.setEnabled(false);
+        } else {
+            releaseDevice();
         }
     }
 
@@ -472,7 +473,7 @@ public class MainFrame extends JFrame {
         returnConfirmButton.setEnabled(false);
     }
 
-    /** Short-lived sessions: release device after each auth cycle or window close. */
+    /** Short-lived sessions: free device for multi-user / next operation. */
     private void releaseDevice() {
         try {
             fingerprintService.cancelListen();
