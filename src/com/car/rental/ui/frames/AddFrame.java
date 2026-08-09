@@ -2,6 +2,8 @@ package com.car.rental.ui.frames;
 
 import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
+import com.car.rental.service.CarService;
+import com.car.rental.service.EmployeeService;
 import com.car.rental.service.FingerprintService;
 import com.car.rental.service.ZkFingerprintService;
 import com.car.rental.ui.components.PlateInputPanel;
@@ -26,8 +28,8 @@ public class AddFrame extends JFrame {
             "9 — انگشت کوچک دست راست"
     };
 
-    private final DatabaseManager db;
-    private final FingerprintService fingerprintService;
+    private final CarService carService;
+    private final EmployeeService employeeService;
 
     private JTextField deviceUserIdField;
     private JTextField nameField;
@@ -37,9 +39,8 @@ public class AddFrame extends JFrame {
     private JLabel employeeStatusLabel;
 
     public AddFrame() {
-        this.db = resolveDatabaseManager();
-        this.fingerprintService = resolveFingerprintService();
-        db.initDatabase();
+        this.carService = resolveCarService();
+        this.employeeService = resolveEmployeeService();
 
         setTitle("اضافه کردن ماشین و کارمند");
         setSize(640, 640);
@@ -47,16 +48,6 @@ public class AddFrame extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BoxLayout(getContentPane(), BoxLayout.Y_AXIS));
         getContentPane().setBackground(Color.WHITE);
-
-        addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosed(java.awt.event.WindowEvent e) {
-                try {
-                    fingerprintService.disconnect();
-                } catch (Exception ignored) {
-                }
-            }
-        });
 
         JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
         headerPanel.setBackground(Color.WHITE);
@@ -70,7 +61,6 @@ public class AddFrame extends JFrame {
         headerPanel.add(backButton);
         add(headerPanel);
 
-        // ---- Car form ----
         JPanel carFormPanel = createTitledPanel("اضافه کردن ماشین");
         JTextField modelField = createField(true);
         PlateInputPanel plateInputPanel = new PlateInputPanel();
@@ -87,22 +77,17 @@ public class AddFrame extends JFrame {
             String name = modelField.getText().strip();
             String plate = plateInputPanel.getPlate();
             String color = colorField.getText().strip();
-            if (name.isEmpty() || color.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "تمام فیلدهای ماشین باید پر شوند!");
-                return;
-            }
             try {
-                db.addCar(name, plate, color);
+                carService.addCar(name, plate, color);
                 JOptionPane.showMessageDialog(this, "ماشین با موفقیت اضافه شد!");
                 modelField.setText("");
                 plateInputPanel.clear();
                 colorField.setText("");
-            } catch (SQLException ex) {
+            } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "خطا در اضافه کردن ماشین: " + ex.getMessage());
             }
         });
 
-        // ---- Employee form ----
         JPanel employeeFormPanel = createTitledPanel("اضافه کردن کارمند");
 
         deviceUserIdField = createField(false);
@@ -146,29 +131,30 @@ public class AddFrame extends JFrame {
         setVisible(true);
     }
 
-    private static DatabaseManager resolveDatabaseManager() {
+    private static CarService resolveCarService() {
         if (SpringContext.isActive()) {
             try {
-                return SpringContext.getBean(DatabaseManager.class);
+                return SpringContext.getBean(CarService.class);
             } catch (Exception ignored) {
             }
         }
-        return new DatabaseManager();
+        return new CarService(new DatabaseManager());
     }
 
-    private static FingerprintService resolveFingerprintService() {
+    private static EmployeeService resolveEmployeeService() {
         if (SpringContext.isActive()) {
             try {
-                return SpringContext.getBean(FingerprintService.class);
+                return SpringContext.getBean(EmployeeService.class);
             } catch (Exception ignored) {
             }
         }
-        return new ZkFingerprintService("192.168.1.200", 4370);
+        FingerprintService fp = new ZkFingerprintService("192.168.1.200", 4370);
+        return new EmployeeService(new DatabaseManager(), fp);
     }
 
     private void refreshNextDeviceUserId() {
         try {
-            deviceUserIdField.setText(db.getNextDeviceUserId());
+            deviceUserIdField.setText(employeeService.getNextDeviceUserId());
         } catch (SQLException ex) {
             deviceUserIdField.setText("");
             JOptionPane.showMessageDialog(this, "خطا در تولید شناسه: " + ex.getMessage());
@@ -185,44 +171,17 @@ public class AddFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "شناسه دستگاه خالی است!");
             return;
         }
-        if (name.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "نام کارمند را به انگلیسی وارد کنید!");
-            return;
-        }
-        if (!name.matches(".*[A-Za-z].*")) {
-            JOptionPane.showMessageDialog(this,
-                    "نام باید انگلیسی باشد (حداقل یک حرف لاتین).\n" +
-                            "دستگاه نام فارسی را درست ذخیره نمی‌کند.");
-            return;
-        }
-
-        try {
-            if (db.isDeviceUserIdExists(deviceUserId)) {
-                JOptionPane.showMessageDialog(this, "این شناسه قبلاً ثبت شده؛ شناسه تازه تولید می‌شود.");
-                refreshNextDeviceUserId();
-                return;
-            }
-        } catch (SQLException ex) {
-            JOptionPane.showMessageDialog(this, "خطا در بررسی دیتابیس: " + ex.getMessage());
-            return;
-        }
 
         setEmployeeFormEnabled(false);
         employeeStatusLabel.setForeground(new Color(180, 120, 0));
-        employeeStatusLabel.setText("در حال اتصال به دستگاه...");
+        employeeStatusLabel.setText("در حال ثبت روی دستگاه و دیتابیس...");
 
         new SwingWorker<Void, String>() {
             @Override
             protected Void doInBackground() throws Exception {
-                publish("در حال اتصال به دستگاه اثر انگشت...");
-                fingerprintService.connect();
-
-                publish("انگشت را روی سنسور بگذارید (منتظر پاسخ دستگاه)...");
-                if (fingerprintService instanceof ZkFingerprintService zk) {
-                    zk.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
-                } else {
-                    throw new IllegalStateException("Fingerprint service does not support enrollment");
-                }
+                publish("انگشت را روی سنسور بگذارید...");
+                employeeService.registerWithFingerprint(
+                        deviceUserId, name, phone.isEmpty() ? null : phone, fingerIndex);
                 return null;
             }
 
@@ -237,14 +196,10 @@ public class AddFrame extends JFrame {
             protected void done() {
                 try {
                     get();
-
-                    db.addEmployee(deviceUserId, name, phone.isEmpty() ? null : phone);
-
                     employeeStatusLabel.setForeground(new Color(0, 128, 0));
                     employeeStatusLabel.setText("کارمند روی دستگاه و در سیستم ثبت شد");
                     JOptionPane.showMessageDialog(AddFrame.this,
                             "کارمند ثبت شد ✅\nشناسه: " + deviceUserId + "\nنام: " + name);
-
                     nameField.setText("");
                     phoneField.setText("");
                     fingerCombo.setSelectedIndex(6);
@@ -253,19 +208,20 @@ public class AddFrame extends JFrame {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage() != null ? cause.getMessage() : cause.toString();
                     employeeStatusLabel.setForeground(Color.RED);
-                    employeeStatusLabel.setText("ثبت ناموفق — در صورت ایجاد، کاربر از دستگاه حذف شد");
+                    employeeStatusLabel.setText("ثبت ناموفق");
                     JOptionPane.showMessageDialog(AddFrame.this,
                             "ثبت کارمند ناموفق بود:\n" + msg,
                             "خطا",
                             JOptionPane.ERROR_MESSAGE);
+                    try {
+                        if (employeeService.isDeviceUserIdExists(deviceUserId)) {
+                            // id already taken — refresh
+                        }
+                    } catch (SQLException ignored) {
+                    }
+                    refreshNextDeviceUserId();
                 } finally {
                     setEmployeeFormEnabled(true);
-                    try {
-                        if (fingerprintService.isConnected()) {
-                            fingerprintService.disconnect();
-                        }
-                    } catch (Exception ignored) {
-                    }
                 }
             }
         }.execute();
@@ -293,12 +249,10 @@ public class AddFrame extends JFrame {
     private void addFormRow(JPanel parent, String labelText, Component field) {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
         row.setBackground(Color.WHITE);
-
         JLabel label = new JLabel(labelText, SwingConstants.RIGHT);
         label.setPreferredSize(new Dimension(140, 25));
         row.add(field);
         row.add(label);
-
         parent.add(row);
     }
 
