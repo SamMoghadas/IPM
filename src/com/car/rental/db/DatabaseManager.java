@@ -6,7 +6,7 @@ import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
 import com.car.rental.util.DataChangeCallback;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -21,11 +21,13 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Data access layer. Prefer obtaining this bean from Spring.
+ * Data access layer (JDBC). Prefer domain services ({@code EmployeeService},
+ * {@code CarService}, {@code RentalService}) from UI code.
+ * <p>
  * Legacy {@code new DatabaseManager()} still works: it reuses the Spring DataSource
  * when the context is active, otherwise falls back to a direct SQLite URL.
  */
-@Service
+@Repository
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
     private static final int DEVICE_USER_ID_START = 1001;
@@ -557,7 +559,6 @@ public class DatabaseManager {
         }
     }
 
-    /** Minimal DataSource for offline / non-Spring fallback. */
     private static final class SimpleDataSource implements DataSource {
         private final String url;
 
