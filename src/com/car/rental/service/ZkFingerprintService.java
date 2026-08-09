@@ -82,6 +82,12 @@ public class ZkFingerprintService implements FingerprintService {
     @Override
     public synchronized void connect() throws FingerprintException {
         if (connected.get()) {
+            // Make sure device is interactive even if we reused a session
+            try {
+                enableDevice();
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "ENABLEDEVICE on existing connection failed", e);
+            }
             return;
         }
         try {
@@ -105,6 +111,14 @@ public class ZkFingerprintService implements FingerprintService {
             }
             sessionId = getSessionId(reply);
             connected.set(true);
+
+            // Critical: after PC connect / previous DISABLE, device may ignore fingers until ENABLE
+            try {
+                enableDevice();
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "ENABLEDEVICE after connect failed", e);
+            }
+
             logger.info("Connected to ZK " + host + ":" + port + " session=" + sessionId);
         } catch (IOException e) {
             closeQuietly();
@@ -119,6 +133,11 @@ public class ZkFingerprintService implements FingerprintService {
             return;
         }
         try {
+            // Best-effort: leave device usable for local use after we leave
+            try {
+                enableDevice();
+            } catch (Exception ignored) {
+            }
             sendCommand(CMD_EXIT, new byte[0]);
         } catch (Exception ignored) {
         }
@@ -149,11 +168,19 @@ public class ZkFingerprintService implements FingerprintService {
 
         listenTask = executor.submit(() -> {
             try {
+                logger.info("Verification listen started (timeout=" + timeoutSeconds + "s)");
+
+                // Device must be enabled or it will not scan / not send ATTLOG
+                synchronized (ZkFingerprintService.this) {
+                    enableDevice();
+                }
+
                 byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
                 byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
                 if (regReply == null || getCommand(regReply) != CMD_ACK_OK) {
                     throw new FingerprintException("Failed to register realtime events");
                 }
+                logger.info("REG_EVENT registered for verification");
 
                 long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
                 socket.setSoTimeout(1000);
@@ -164,35 +191,51 @@ public class ZkFingerprintService implements FingerprintService {
                         if (packet == null) continue;
 
                         int cmd = getCommand(packet);
-                        if (cmd == CMD_REG_EVENT) {
-                            int eventCode = getSessionId(packet);
-                            if (eventCode == EF_ATTLOG) {
-                                VerificationResult result = parseAttLog(packet);
-                                if (result != null) {
-                                    sendAck();
-                                    listening.set(false);
-                                    if (onVerified != null) {
-                                        onVerified.accept(result);
-                                    }
-                                    return;
-                                }
-                            } else {
-                                sendAck();
-                            }
+                        if (cmd != CMD_REG_EVENT) {
+                            logger.fine("Verify ignore cmd=" + cmd);
+                            continue;
                         }
+
+                        int eventCode = getSessionId(packet);
+                        logger.info("Verify realtime event code=" + eventCode
+                                + " packetLen=" + packet.length);
+
+                        // Always ACK realtime packets so the device keeps sending
+                        sendAck();
+
+                        boolean isAttLog = eventCode == EF_ATTLOG || (eventCode & EF_ATTLOG) != 0;
+                        if (!isAttLog) {
+                            // EF_FINGER / quality — keep waiting for ATTLOG
+                            continue;
+                        }
+
+                        VerificationResult result = parseAttLog(packet);
+                        if (result != null) {
+                            logger.info("ATTLOG userId=" + result.getDeviceUserId()
+                                    + " time=" + result.getDeviceTime());
+                            listening.set(false);
+                            if (onVerified != null) {
+                                onVerified.accept(result);
+                            }
+                            return;
+                        }
+                        logger.warning("ATTLOG event but parseAttLog returned null; packetLen="
+                                + packet.length);
                     } catch (java.net.SocketTimeoutException ste) {
-                        // poll
+                        // poll until deadline
                     }
                 }
 
                 if (listening.get()) {
                     listening.set(false);
+                    logger.info("Verification listen timed out");
                     if (onTimeout != null) {
                         onTimeout.run();
                     }
                 }
             } catch (Exception e) {
                 listening.set(false);
+                logger.log(Level.SEVERE, "Verification listen error", e);
                 if (onError != null) {
                     onError.accept(new FingerprintException("Error while listening: " + e.getMessage(), e));
                 }
@@ -305,6 +348,12 @@ public class ZkFingerprintService implements FingerprintService {
                 throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
             }
             waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
+            // Return device to normal interactive mode after enroll
+            try {
+                enableDevice();
+            } catch (Exception e) {
+                logger.log(Level.WARNING, "ENABLEDEVICE after enroll failed", e);
+            }
         } catch (FingerprintException e) {
             if (userCreated) {
                 try {
@@ -333,6 +382,11 @@ public class ZkFingerprintService implements FingerprintService {
             throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
         }
         waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
+        try {
+            enableDevice();
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "ENABLEDEVICE after enrollFingerOnly failed", e);
+        }
     }
 
     private void waitForEnrollDeviceEvent(int timeoutSeconds) throws FingerprintException {
@@ -600,31 +654,47 @@ public class ZkFingerprintService implements FingerprintService {
         return (fullPacket[12] & 0xFF) | ((fullPacket[13] & 0xFF) << 8);
     }
 
+    /**
+     * Parse realtime ATTLOG payload.
+     * TFT devices often use a 24-byte null-terminated user id / PIN at the start of data.
+     */
     private VerificationResult parseAttLog(byte[] fullPacket) {
         try {
             int dataOffset = 16;
-            if (fullPacket.length < dataOffset + 32) {
+            if (fullPacket.length < dataOffset + 8) {
                 return null;
             }
-            int end = dataOffset;
-            while (end < dataOffset + 9 && fullPacket[end] != 0) end++;
-            String userId = new String(fullPacket, dataOffset, end - dataOffset, StandardCharsets.US_ASCII).trim();
-            if (userId.isEmpty()) return null;
 
-            int verifyType = (fullPacket[dataOffset + 24] & 0xFF)
-                    | ((fullPacket[dataOffset + 25] & 0xFF) << 8);
-            int y = (fullPacket[dataOffset + 26] & 0xFF) + 2000;
-            int mo = fullPacket[dataOffset + 27] & 0xFF;
-            int d = fullPacket[dataOffset + 28] & 0xFF;
-            int h = fullPacket[dataOffset + 29] & 0xFF;
-            int mi = fullPacket[dataOffset + 30] & 0xFF;
-            int s = fullPacket[dataOffset + 31] & 0xFF;
-            LocalDateTime time;
-            try {
-                time = LocalDateTime.of(y, mo, d, h, mi, s);
-            } catch (Exception e) {
-                time = LocalDateTime.now();
+            // User id / PIN: up to 24 ASCII bytes, null-terminated
+            int maxIdLen = Math.min(24, fullPacket.length - dataOffset);
+            int end = dataOffset;
+            while (end < dataOffset + maxIdLen && fullPacket[end] != 0) {
+                end++;
             }
+            String userId = new String(fullPacket, dataOffset, end - dataOffset, StandardCharsets.US_ASCII).trim();
+            if (userId.isEmpty()) {
+                return null;
+            }
+
+            // Classic layout: time fields around offset +24 .. +31 when payload is large enough
+            LocalDateTime time = LocalDateTime.now();
+            int verifyType = 1;
+            if (fullPacket.length >= dataOffset + 32) {
+                verifyType = (fullPacket[dataOffset + 24] & 0xFF)
+                        | ((fullPacket[dataOffset + 25] & 0xFF) << 8);
+                int y = (fullPacket[dataOffset + 26] & 0xFF) + 2000;
+                int mo = fullPacket[dataOffset + 27] & 0xFF;
+                int d = fullPacket[dataOffset + 28] & 0xFF;
+                int h = fullPacket[dataOffset + 29] & 0xFF;
+                int mi = fullPacket[dataOffset + 30] & 0xFF;
+                int s = fullPacket[dataOffset + 31] & 0xFF;
+                try {
+                    time = LocalDateTime.of(y, mo, d, h, mi, s);
+                } catch (Exception ignored) {
+                    time = LocalDateTime.now();
+                }
+            }
+
             return new VerificationResult(userId, time, verifyType);
         } catch (Exception e) {
             logger.log(Level.WARNING, "Failed to parse ATTLOG", e);
