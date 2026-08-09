@@ -58,12 +58,12 @@ public class CarService {
         db.deleteCar(plate, callback);
     }
 
-    public List<String> getAvailableCars() throws SQLException {
-        return db.getAvailableCars();
+    public List<Car> getAvailableCars() throws SQLException {
+        return db.listAvailableCars();
     }
 
-    public List<String> getAllCars() throws SQLException {
-        return db.getAllCars();
+    public List<Car> getAllCars() throws SQLException {
+        return db.listAllCars();
     }
 
     public int getCarIdByPlate(String plate) throws SQLException {
