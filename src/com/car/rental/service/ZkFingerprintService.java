@@ -91,11 +91,7 @@ public class ZkFingerprintService implements FingerprintService {
     @Override
     public synchronized void connect() throws FingerprintException {
         if (connected.get()) {
-            try {
-                enableDevice();
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "ENABLEDEVICE on existing connection failed", e);
-            }
+            enableDeviceBestEffort("existing connection");
             return;
         }
         try {
@@ -120,11 +116,7 @@ public class ZkFingerprintService implements FingerprintService {
             sessionId = getSessionId(reply);
             connected.set(true);
 
-            try {
-                enableDevice();
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "ENABLEDEVICE after connect failed", e);
-            }
+            enableDeviceBestEffort("after connect");
 
             logger.info("Connected to ZK " + host + ":" + port + " session=" + sessionId);
         } catch (IOException e) {
@@ -140,10 +132,7 @@ public class ZkFingerprintService implements FingerprintService {
             return;
         }
         try {
-            try {
-                enableDevice();
-            } catch (Exception ignored) {
-            }
+            enableDeviceBestEffort("before disconnect");
             sendCommand(CMD_EXIT, new byte[0]);
         } catch (Exception ignored) {
         }
@@ -157,10 +146,6 @@ public class ZkFingerprintService implements FingerprintService {
         return connected.get() && socket != null && socket.isConnected() && !socket.isClosed();
     }
 
-    /**
-     * Realtime verification with device prompt when supported:
-     * ENABLEDEVICE → STARTVERIFY (auth UI) → optional LCD/voice → REG_EVENT → wait ATTLOG.
-     */
     @Override
     public void listenForVerification(int timeoutSeconds,
                                       Consumer<VerificationResult> onVerified,
@@ -179,10 +164,8 @@ public class ZkFingerprintService implements FingerprintService {
                 }
 
                 synchronized (ZkFingerprintService.this) {
-                    enableDevice();
-                    // Put terminal into authentication state (shows verify UI on many firmwares)
+                    enableDeviceBestEffort("before verify");
                     tryStartVerify();
-                    // Best-effort: short voice beep / LCD hint (ignored if unsupported)
                     tryTestVoice();
                     tryWriteLcd("Put finger");
                 }
@@ -273,7 +256,6 @@ public class ZkFingerprintService implements FingerprintService {
         });
     }
 
-    /** CMD_STARTVERIFY — switch machine to authentication state (best-effort). */
     private void tryStartVerify() {
         try {
             byte[] reply = sendCommand(CMD_STARTVERIFY, new byte[0]);
@@ -287,10 +269,8 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /** CMD_TESTVOICE — play a short device prompt sound if supported. */
     private void tryTestVoice() {
         try {
-            // index 0 is commonly "thank you" / first voice; some firmwares use other indices
             byte[] data = new byte[]{0x00, 0x00};
             byte[] reply = sendCommand(CMD_TESTVOICE, data);
             if (reply != null && getCommand(reply) == CMD_ACK_OK) {
@@ -301,16 +281,12 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /**
-     * CMD_WRITE_LCD — print a short caption on device screen (ASCII only).
-     * Payload layout varies; line=0 col=0 + null-terminated text is widely used.
-     */
     private void tryWriteLcd(String text) {
         try {
             byte[] msg = (text == null ? "" : text).getBytes(StandardCharsets.US_ASCII);
             byte[] data = new byte[2 + msg.length + 1];
-            data[0] = 0; // line
-            data[1] = 0; // column
+            data[0] = 0;
+            data[1] = 0;
             System.arraycopy(msg, 0, data, 2, msg.length);
             data[data.length - 1] = 0;
             byte[] reply = sendCommand(CMD_WRITE_LCD, data);
@@ -510,7 +486,7 @@ public class ZkFingerprintService implements FingerprintService {
                 }
                 writeUser(uid, name == null ? "" : name, deviceUserId);
             } finally {
-                enableDevice();
+                enableDeviceBestEffort("after createUser");
             }
         } catch (IOException e) {
             throw new FingerprintException("createUser failed: " + e.getMessage(), e);
@@ -525,7 +501,7 @@ public class ZkFingerprintService implements FingerprintService {
             try {
                 writeUser(uid, name == null ? "" : name, deviceUserId);
             } finally {
-                enableDevice();
+                enableDeviceBestEffort("after updateUserName");
             }
         } catch (IOException e) {
             throw new FingerprintException("updateUserName failed: " + e.getMessage(), e);
@@ -555,6 +531,7 @@ public class ZkFingerprintService implements FingerprintService {
                 }
                 sendStartEnroll(deviceUserId, fingerIndex);
                 waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
+                enableDeviceBestEffort("after startEnroll");
                 if (onFinished != null) {
                     onFinished.accept(new EnrollResult(true,
                             "Enroll finished for user " + deviceUserId));
@@ -587,11 +564,8 @@ public class ZkFingerprintService implements FingerprintService {
                 throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
             }
             waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
-            try {
-                enableDevice();
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "ENABLEDEVICE after enroll failed", e);
-            }
+            // Device often still has residual events / is already in work mode after enroll.
+            enableDeviceBestEffort("after enroll");
         } catch (FingerprintException e) {
             if (userCreated) {
                 try {
@@ -616,11 +590,7 @@ public class ZkFingerprintService implements FingerprintService {
             throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
         }
         waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
-        try {
-            enableDevice();
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "ENABLEDEVICE after enrollFingerOnly failed", e);
-        }
+        enableDeviceBestEffort("after enrollFingerOnly");
     }
 
     private void waitForEnrollDeviceEvent(int timeoutSeconds) throws FingerprintException {
@@ -729,6 +699,72 @@ public class ZkFingerprintService implements FingerprintService {
 
     private void enableDevice() throws IOException, FingerprintException {
         requireAck(sendCommand(CMD_ENABLEDEVICE, new byte[0]), "ENABLEDEVICE");
+    }
+
+    /**
+     * After enroll the device often still streams residual REG_EVENT packets, so a strict
+     * ENABLEDEVICE ACK can fail even though the terminal is already usable.
+     * Drain the socket, retry once, and never fail the caller for this step.
+     */
+    private void enableDeviceBestEffort(String context) {
+        try {
+            drainPendingPackets(300);
+            byte[] reply = sendCommand(CMD_ENABLEDEVICE, new byte[0]);
+            if (reply != null && getCommand(reply) == CMD_ACK_OK) {
+                return;
+            }
+            // Residual event may have been read as "reply" — drain and retry once
+            Thread.sleep(200);
+            drainPendingPackets(300);
+            reply = sendCommand(CMD_ENABLEDEVICE, new byte[0]);
+            if (reply != null && getCommand(reply) == CMD_ACK_OK) {
+                logger.info("ENABLEDEVICE OK on retry (" + context + ")");
+                return;
+            }
+            logger.info("ENABLEDEVICE skipped/ignored after " + context
+                    + " (device often already enabled post-enroll)");
+        } catch (Exception e) {
+            logger.info("ENABLEDEVICE best-effort after " + context + ": " + e.getMessage());
+        }
+    }
+
+    /** Read and discard any packets available within roughly {@code budgetMs}. */
+    private void drainPendingPackets(int budgetMs) {
+        if (socket == null || in == null) {
+            return;
+        }
+        try {
+            int previous = socket.getSoTimeout();
+            socket.setSoTimeout(50);
+            long end = System.currentTimeMillis() + budgetMs;
+            int drained = 0;
+            try {
+                while (System.currentTimeMillis() < end) {
+                    try {
+                        byte[] p = readPacket();
+                        if (p == null) {
+                            break;
+                        }
+                        drained++;
+                        // ACK residual realtime events so device stays happy
+                        if (getCommand(p) == CMD_REG_EVENT) {
+                            sendAck();
+                        }
+                    } catch (java.net.SocketTimeoutException ste) {
+                        break;
+                    }
+                }
+            } finally {
+                try {
+                    socket.setSoTimeout(previous);
+                } catch (Exception ignored) {
+                }
+            }
+            if (drained > 0) {
+                logger.fine("Drained " + drained + " pending packet(s)");
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void deleteUserByUid(int uid) throws IOException, FingerprintException {
