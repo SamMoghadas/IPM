@@ -1,6 +1,8 @@
 package com.car.rental.ui.frames;
 
+import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
+import com.car.rental.service.FingerprintService;
 import com.car.rental.service.ZkFingerprintService;
 import com.car.rental.ui.components.PlateInputPanel;
 
@@ -24,9 +26,8 @@ public class AddFrame extends JFrame {
             "9 — انگشت کوچک دست راست"
     };
 
-    private final DatabaseManager db = new DatabaseManager();
-    private final ZkFingerprintService fingerprintService =
-            new ZkFingerprintService("192.168.1.200", 4370);
+    private final DatabaseManager db;
+    private final FingerprintService fingerprintService;
 
     private JTextField deviceUserIdField;
     private JTextField nameField;
@@ -36,6 +37,8 @@ public class AddFrame extends JFrame {
     private JLabel employeeStatusLabel;
 
     public AddFrame() {
+        this.db = resolveDatabaseManager();
+        this.fingerprintService = resolveFingerprintService();
         db.initDatabase();
 
         setTitle("اضافه کردن ماشین و کارمند");
@@ -107,7 +110,6 @@ public class AddFrame extends JFrame {
         deviceUserIdField.setBackground(new Color(240, 240, 240));
         deviceUserIdField.setToolTipText("شناسه به‌صورت خودکار از ۱۰۰۱ به بعد تولید می‌شود");
 
-        // Value is English but label is Persian; field stays LTR
         nameField = createField(false);
         nameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
         nameField.setHorizontalAlignment(JTextField.LEFT);
@@ -142,6 +144,26 @@ public class AddFrame extends JFrame {
 
         refreshNextDeviceUserId();
         setVisible(true);
+    }
+
+    private static DatabaseManager resolveDatabaseManager() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(DatabaseManager.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new DatabaseManager();
+    }
+
+    private static FingerprintService resolveFingerprintService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(FingerprintService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new ZkFingerprintService("192.168.1.200", 4370);
     }
 
     private void refreshNextDeviceUserId() {
@@ -196,7 +218,11 @@ public class AddFrame extends JFrame {
                 fingerprintService.connect();
 
                 publish("انگشت را روی سنسور بگذارید (منتظر پاسخ دستگاه)...");
-                fingerprintService.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
+                if (fingerprintService instanceof ZkFingerprintService zk) {
+                    zk.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
+                } else {
+                    throw new IllegalStateException("Fingerprint service does not support enrollment");
+                }
                 return null;
             }
 
