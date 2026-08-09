@@ -19,10 +19,8 @@ import java.util.logging.Logger;
 
 /**
  * ZKTeco TCP client (port 4370).
- * <p>
- * Verification uses the same realtime path that already worked in ZkTestMain:
- * stay connected, ENABLEDEVICE, REG_EVENT, wait for ATTLOG.
- * Enroll uses STARTENROLL + realtime EF_ENROLLFINGER.
+ * Verification: ENABLE + STARTVERIFY + REG_EVENT, wait for ATTLOG.
+ * Enroll: STARTENROLL + EF_ENROLLFINGER realtime events.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -40,7 +38,11 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int CMD_USER_WRQ = 8;
     private static final int CMD_USERTEMP_RRQ = 9;
     private static final int CMD_DELETE_USER = 18;
+    private static final int CMD_STARTVERIFY = 60;
     private static final int CMD_STARTENROLL = 61;
+    private static final int CMD_WRITE_LCD = 66;
+    private static final int CMD_CLEAR_LCD = 67;
+    private static final int CMD_TESTVOICE = 1017;
 
     private static final int EF_ATTLOG = 1;
     private static final int EF_FINGER = 2;
@@ -156,8 +158,8 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Realtime verification — same approach as the working ZkTestMain:
-     * stay connected, enable device, register events, wait for ATTLOG.
+     * Realtime verification with device prompt when supported:
+     * ENABLEDEVICE → STARTVERIFY (auth UI) → optional LCD/voice → REG_EVENT → wait ATTLOG.
      */
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -178,15 +180,19 @@ public class ZkFingerprintService implements FingerprintService {
 
                 synchronized (ZkFingerprintService.this) {
                     enableDevice();
+                    // Put terminal into authentication state (shows verify UI on many firmwares)
+                    tryStartVerify();
+                    // Best-effort: short voice beep / LCD hint (ignored if unsupported)
+                    tryTestVoice();
+                    tryWriteLcd("Put finger");
                 }
 
-                // Register all realtime events (same as successful tests)
                 byte[] regData = new byte[]{(byte) 0xFF, (byte) 0xFF, 0x00, 0x00};
                 byte[] regReply = sendCommand(CMD_REG_EVENT, regData);
                 if (regReply == null || getCommand(regReply) != CMD_ACK_OK) {
                     throw new FingerprintException("Failed to register realtime events");
                 }
-                logger.info("REG_EVENT OK — put finger on the device sensor now");
+                logger.info("REG_EVENT OK — device ready, place finger on sensor");
 
                 previousTimeout = socket.getSoTimeout();
                 socket.setSoTimeout(1000);
@@ -210,10 +216,8 @@ public class ZkFingerprintService implements FingerprintService {
                         logger.info("Verify event code=" + eventCode + " len=" + packet.length
                                 + " hex=" + toHex(packet, 0, Math.min(48, packet.length)));
 
-                        // Always ACK so device keeps streaming events
                         sendAck();
 
-                        // Finger placed / quality — keep waiting for ATTLOG
                         if (eventCode == EF_FINGER || eventCode == EF_FPFTR
                                 || (eventCode & EF_FPFTR) != 0) {
                             continue;
@@ -229,6 +233,7 @@ public class ZkFingerprintService implements FingerprintService {
                             logger.info("ATTLOG userId=" + result.getDeviceUserId()
                                     + " time=" + result.getDeviceTime());
                             listening.set(false);
+                            tryClearLcd();
                             if (onVerified != null) {
                                 onVerified.accept(result);
                             }
@@ -243,6 +248,7 @@ public class ZkFingerprintService implements FingerprintService {
 
                 if (listening.get()) {
                     listening.set(false);
+                    tryClearLcd();
                     logger.info("Realtime verification timed out");
                     if (onTimeout != null) {
                         onTimeout.run();
@@ -250,6 +256,7 @@ public class ZkFingerprintService implements FingerprintService {
                 }
             } catch (Exception e) {
                 listening.set(false);
+                tryClearLcd();
                 logger.log(Level.SEVERE, "Realtime verification error", e);
                 if (onError != null) {
                     onError.accept(new FingerprintException(
@@ -266,10 +273,65 @@ public class ZkFingerprintService implements FingerprintService {
         });
     }
 
+    /** CMD_STARTVERIFY — switch machine to authentication state (best-effort). */
+    private void tryStartVerify() {
+        try {
+            byte[] reply = sendCommand(CMD_STARTVERIFY, new byte[0]);
+            if (reply != null && getCommand(reply) == CMD_ACK_OK) {
+                logger.info("STARTVERIFY accepted by device");
+            } else {
+                logger.info("STARTVERIFY not acknowledged (firmware may ignore it)");
+            }
+        } catch (Exception e) {
+            logger.log(Level.FINE, "STARTVERIFY failed", e);
+        }
+    }
+
+    /** CMD_TESTVOICE — play a short device prompt sound if supported. */
+    private void tryTestVoice() {
+        try {
+            // index 0 is commonly "thank you" / first voice; some firmwares use other indices
+            byte[] data = new byte[]{0x00, 0x00};
+            byte[] reply = sendCommand(CMD_TESTVOICE, data);
+            if (reply != null && getCommand(reply) == CMD_ACK_OK) {
+                logger.info("TESTVOICE played");
+            }
+        } catch (Exception e) {
+            logger.log(Level.FINE, "TESTVOICE failed", e);
+        }
+    }
+
     /**
-     * Parse realtime ATTLOG payload (command packet, data at offset 16).
-     * Handles string user ids and numeric uids seen on ZMM100.
+     * CMD_WRITE_LCD — print a short caption on device screen (ASCII only).
+     * Payload layout varies; line=0 col=0 + null-terminated text is widely used.
      */
+    private void tryWriteLcd(String text) {
+        try {
+            byte[] msg = (text == null ? "" : text).getBytes(StandardCharsets.US_ASCII);
+            byte[] data = new byte[2 + msg.length + 1];
+            data[0] = 0; // line
+            data[1] = 0; // column
+            System.arraycopy(msg, 0, data, 2, msg.length);
+            data[data.length - 1] = 0;
+            byte[] reply = sendCommand(CMD_WRITE_LCD, data);
+            if (reply != null && getCommand(reply) == CMD_ACK_OK) {
+                logger.info("WRITE_LCD OK: " + text);
+            }
+        } catch (Exception e) {
+            logger.log(Level.FINE, "WRITE_LCD failed", e);
+        }
+    }
+
+    private void tryClearLcd() {
+        try {
+            if (!isConnected()) {
+                return;
+            }
+            sendCommand(CMD_CLEAR_LCD, new byte[0]);
+        } catch (Exception ignored) {
+        }
+    }
+
     private VerificationResult parseRealtimeAttLog(byte[] fullPacket) {
         try {
             int dataOffset = 16;
@@ -277,11 +339,9 @@ public class ZkFingerprintService implements FingerprintService {
                 return null;
             }
 
-            // Try ASCII user id at start of payload
             String userId = readAsciiId(fullPacket, dataOffset,
                     Math.min(24, fullPacket.length - dataOffset));
 
-            // Some firmwares put uid as uint16/uint32 first
             if (userId == null && fullPacket.length >= dataOffset + 2) {
                 int uid16 = (fullPacket[dataOffset] & 0xFF)
                         | ((fullPacket[dataOffset + 1] & 0xFF) << 8);
@@ -290,7 +350,6 @@ public class ZkFingerprintService implements FingerprintService {
                 }
             }
 
-            // Offset +6 ASCII (same quirk as bulk 36-byte logs on this device)
             if (userId == null && fullPacket.length >= dataOffset + 8) {
                 userId = readAsciiId(fullPacket, dataOffset + 6,
                         Math.min(18, fullPacket.length - dataOffset - 6));
@@ -303,7 +362,6 @@ public class ZkFingerprintService implements FingerprintService {
             LocalDateTime time = LocalDateTime.now();
             int verifyType = 1;
 
-            // 6-byte wall time layouts
             if (fullPacket.length >= dataOffset + 32) {
                 for (int rel : new int[]{26, 27, 24}) {
                     LocalDateTime t = tryWallTime(fullPacket, dataOffset + rel);
@@ -315,7 +373,6 @@ public class ZkFingerprintService implements FingerprintService {
                 verifyType = fullPacket[dataOffset + 24] & 0xFF;
             }
 
-            // 4-byte ZK packed time
             if (time.getYear() == LocalDateTime.now().getYear()
                     && fullPacket.length >= dataOffset + 8) {
                 for (int rel : new int[]{4, 6, 27, fullPacket.length - dataOffset - 4}) {
