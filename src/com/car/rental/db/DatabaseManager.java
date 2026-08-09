@@ -23,9 +23,6 @@ import java.util.logging.Logger;
 /**
  * Data access layer (JDBC). Prefer domain services ({@code EmployeeService},
  * {@code CarService}, {@code RentalService}) from UI code.
- * <p>
- * Legacy {@code new DatabaseManager()} still works: it reuses the Spring DataSource
- * when the context is active, otherwise falls back to a direct SQLite URL.
  */
 @Repository
 public class DatabaseManager {
@@ -316,38 +313,38 @@ public class DatabaseManager {
         }
     }
 
-    public List<String> getAvailableCars() throws SQLException {
-        List<String> cars = new ArrayList<>();
-        String sql = "SELECT name, color, plate FROM CarTable WHERE is_deleted = 0 AND is_rented = 0";
-
+    public List<Car> listAvailableCars() throws SQLException {
+        List<Car> cars = new ArrayList<>();
+        String sql = "SELECT name, color, plate FROM CarTable WHERE is_deleted = 0 AND is_rented = 0 ORDER BY name";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
-
             while (rs.next()) {
-                String car = rs.getString("name") + " - " +
-                        rs.getString("color") + " - " +
-                        rs.getString("plate");
-                cars.add(car);
+                cars.add(new Car(
+                        rs.getString("name"),
+                        rs.getString("plate"),
+                        rs.getString("color"),
+                        "آزاد"
+                ));
             }
         }
         return cars;
     }
 
-    public List<String> getAllCars() throws SQLException {
-        List<String> cars = new ArrayList<>();
-        String sql = "SELECT name, color, plate, is_rented FROM CarTable WHERE is_deleted = 0";
-
+    public List<Car> listAllCars() throws SQLException {
+        List<Car> cars = new ArrayList<>();
+        String sql = "SELECT name, color, plate, is_rented FROM CarTable WHERE is_deleted = 0 ORDER BY name";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
-
             while (rs.next()) {
-                String car = rs.getString("name") + " - " +
-                        rs.getString("color") + " - " +
-                        rs.getString("plate") + " - " +
-                        rs.getString("is_rented");
-                cars.add(car);
+                boolean rented = rs.getInt("is_rented") == 1;
+                cars.add(new Car(
+                        rs.getString("name"),
+                        rs.getString("plate"),
+                        rs.getString("color"),
+                        rented ? "در ماموریت" : "آزاد"
+                ));
             }
         }
         return cars;
