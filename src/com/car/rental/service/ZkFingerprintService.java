@@ -18,9 +18,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * ZKTeco TCP client. Enroll uses realtime events; verification uses
- * disconnect + poll attendance logs because many TFT firmwares do not
- * push ATTLOG while a PC session is held open.
+ * ZKTeco TCP client.
+ * <p>
+ * Enroll uses realtime events (STARTENROLL).
+ * Verification intentionally disconnects so the terminal can scan in standalone
+ * mode, then periodically re-reads attendance logs for a new punch.
  */
 public class ZkFingerprintService implements FingerprintService {
 
@@ -47,7 +49,10 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int EF_FPFTR = 256;
 
     private static final int ENROLL_TIMEOUT_SECONDS = 60;
-    private static final int VERIFY_POLL_MS = 1500;
+    /** How long to leave the device completely alone so the user can punch. */
+    private static final int VERIFY_FREE_MS = 5000;
+    /** Settle time after disconnect before the first free window. */
+    private static final int VERIFY_SETTLE_MS = 2000;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -160,9 +165,12 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Wait for a fingerprint punch.
-     * Detects new punches by growth of the raw attendance buffer (not by
-     * unreliable parsed timestamps).
+     * Wait for a local fingerprint punch on the terminal.
+     * <ol>
+     *   <li>Snapshot attendance buffer size</li>
+     *   <li>Fully disconnect and leave the device alone for several seconds</li>
+     *   <li>Briefly reconnect only to check if a new log appeared</li>
+     * </ol>
      */
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -174,7 +182,8 @@ public class ZkFingerprintService implements FingerprintService {
 
         listenTask = executor.submit(() -> {
             try {
-                logger.info("Verification poll started (timeout=" + timeoutSeconds + "s)");
+                logger.info("Verification started (timeout=" + timeoutSeconds
+                        + "s, freeWindow=" + VERIFY_FREE_MS + "ms)");
 
                 if (!isConnected()) {
                     connect();
@@ -184,18 +193,22 @@ public class ZkFingerprintService implements FingerprintService {
                 logger.info("Attendance baseline rawBytes=" + baseline.rawSize
                         + " validRecords=" + baseline.records.size());
 
+                // Leave device in normal standalone mode for punching
+                try {
+                    enableDevice();
+                } catch (Exception e) {
+                    logger.log(Level.WARNING, "ENABLEDEVICE before free window failed", e);
+                }
                 disconnectQuietly();
-                logger.info("Device disconnected for local punch — place finger on terminal");
+                logger.info("Device FREE — place finger on the terminal now");
+
+                sleepQuiet(VERIFY_SETTLE_MS);
 
                 long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
 
                 while (listening.get() && System.currentTimeMillis() < deadline) {
-                    try {
-                        Thread.sleep(VERIFY_POLL_MS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+                    // Long free window: device is disconnected, sensor should work
+                    sleepQuiet(VERIFY_FREE_MS);
                     if (!listening.get()) {
                         break;
                     }
@@ -203,16 +216,20 @@ public class ZkFingerprintService implements FingerprintService {
                     try {
                         connect();
                         AttLogSnapshot snap = readAttendanceSnapshot();
+                        // Re-enable and drop connection again immediately
+                        try {
+                            enableDevice();
+                        } catch (Exception ignored) {
+                        }
                         disconnectQuietly();
 
                         if (snap.rawSize > baseline.rawSize) {
                             VerificationResult newer = pickNewestValid(snap.records);
                             if (newer == null) {
-                                // Raw grew but parse failed — try parse only the tail bytes
                                 newer = parseTailRecord(snap.rawBuffer, baseline.rawSize);
                             }
                             if (newer != null) {
-                                logger.info("New punch detected userId=" + newer.getDeviceUserId()
+                                logger.info("New punch userId=" + newer.getDeviceUserId()
                                         + " time=" + newer.getDeviceTime()
                                         + " raw " + baseline.rawSize + "->" + snap.rawSize);
                                 listening.set(false);
@@ -221,16 +238,14 @@ public class ZkFingerprintService implements FingerprintService {
                                 }
                                 return;
                             }
-                            logger.warning("Attendance buffer grew but no valid userId parsed. "
-                                    + "raw " + baseline.rawSize + "->" + snap.rawSize
-                                    + " — check record format");
-                            // Still advance baseline so we don't spin on same growth
+                            logger.warning("Buffer grew but no valid userId parsed. raw "
+                                    + baseline.rawSize + "->" + snap.rawSize);
                             baseline = snap;
                         } else {
-                            logger.fine("Poll: no new attendance (raw=" + snap.rawSize + ")");
+                            logger.info("Still waiting for punch (rawBytes=" + snap.rawSize + ")");
                         }
                     } catch (Exception pollEx) {
-                        logger.log(Level.WARNING, "Attendance poll failed, will retry", pollEx);
+                        logger.log(Level.WARNING, "Attendance check failed, will retry", pollEx);
                         try {
                             disconnectQuietly();
                         } catch (Exception ignored) {
@@ -240,14 +255,14 @@ public class ZkFingerprintService implements FingerprintService {
 
                 if (listening.get()) {
                     listening.set(false);
-                    logger.info("Verification poll timed out");
+                    logger.info("Verification timed out");
                     if (onTimeout != null) {
                         onTimeout.run();
                     }
                 }
             } catch (Exception e) {
                 listening.set(false);
-                logger.log(Level.SEVERE, "Verification poll error", e);
+                logger.log(Level.SEVERE, "Verification error", e);
                 try {
                     disconnectQuietly();
                 } catch (Exception ignored) {
@@ -257,6 +272,14 @@ public class ZkFingerprintService implements FingerprintService {
                 }
             }
         });
+    }
+
+    private void sleepQuiet(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static VerificationResult pickNewestValid(List<VerificationResult> records) {
@@ -270,11 +293,9 @@ public class ZkFingerprintService implements FingerprintService {
         if (buffer == null || fromOffset < 0 || fromOffset >= buffer.length) {
             return null;
         }
-        int tailLen = buffer.length - fromOffset;
         int[] sizes = {40, 36, 32, 16};
         for (int rs : sizes) {
-            if (tailLen >= rs) {
-                // parse the last full record in the buffer
+            if (buffer.length >= rs) {
                 int start = buffer.length - rs;
                 VerificationResult r = parseAttendanceRecord(buffer, start, rs);
                 if (r != null) {
@@ -297,45 +318,40 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
+    /**
+     * Read attendance without DISABLEDEVICE so the sensor is not locked
+     * longer than necessary between free windows.
+     */
     private synchronized AttLogSnapshot readAttendanceSnapshot()
             throws IOException, FingerprintException {
         ensureConnected();
-        disableDevice();
-        try {
-            byte[] reply = sendCommand(CMD_ATTLOG_RRQ, new byte[0]);
-            if (reply == null) {
-                return new AttLogSnapshot(new byte[0], new ArrayList<>());
-            }
-            int cmd = getCommand(reply);
-            if (cmd == CMD_ACK_OK || cmd == CMD_ACK_ERROR) {
-                return new AttLogSnapshot(new byte[0], new ArrayList<>());
-            }
-            if (cmd != CMD_PREPARE_DATA) {
-                logger.warning("ATTLOG_RRQ unexpected cmd=" + cmd);
-                return new AttLogSnapshot(new byte[0], new ArrayList<>());
-            }
-
-            int size = 0;
-            if (reply.length >= 20) {
-                size = (reply[16] & 0xFF)
-                        | ((reply[17] & 0xFF) << 8)
-                        | ((reply[18] & 0xFF) << 16)
-                        | ((reply[19] & 0xFF) << 24);
-            }
-            if (size <= 0) {
-                return new AttLogSnapshot(new byte[0], new ArrayList<>());
-            }
-
-            byte[] buffer = readDataBuffer(size);
-            List<VerificationResult> records = parseAttendanceBuffer(buffer);
-            return new AttLogSnapshot(buffer, records);
-        } finally {
-            try {
-                enableDevice();
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "ENABLEDEVICE after ATTLOG read failed", e);
-            }
+        byte[] reply = sendCommand(CMD_ATTLOG_RRQ, new byte[0]);
+        if (reply == null) {
+            return new AttLogSnapshot(new byte[0], new ArrayList<>());
         }
+        int cmd = getCommand(reply);
+        if (cmd == CMD_ACK_OK || cmd == CMD_ACK_ERROR) {
+            return new AttLogSnapshot(new byte[0], new ArrayList<>());
+        }
+        if (cmd != CMD_PREPARE_DATA) {
+            logger.warning("ATTLOG_RRQ unexpected cmd=" + cmd);
+            return new AttLogSnapshot(new byte[0], new ArrayList<>());
+        }
+
+        int size = 0;
+        if (reply.length >= 20) {
+            size = (reply[16] & 0xFF)
+                    | ((reply[17] & 0xFF) << 8)
+                    | ((reply[18] & 0xFF) << 16)
+                    | ((reply[19] & 0xFF) << 24);
+        }
+        if (size <= 0) {
+            return new AttLogSnapshot(new byte[0], new ArrayList<>());
+        }
+
+        byte[] buffer = readDataBuffer(size);
+        List<VerificationResult> records = parseAttendanceBuffer(buffer);
+        return new AttLogSnapshot(buffer, records);
     }
 
     private byte[] readDataBuffer(int totalSize) throws IOException {
@@ -385,7 +401,6 @@ public class ZkFingerprintService implements FingerprintService {
             return list;
         }
 
-        // Prefer sizes that both divide the buffer and yield valid user ids
         int[] candidates = {40, 36, 32, 16};
         int bestSize = 0;
         int bestValid = -1;
@@ -404,10 +419,8 @@ public class ZkFingerprintService implements FingerprintService {
                 bestSize = c;
             }
         }
-
         if (bestSize == 0) {
-            // Fallback: try 40 even if remainder
-            bestSize = 40;
+            bestSize = 36;
         }
 
         for (int i = 0; i + bestSize <= buffer.length; i += bestSize) {
@@ -417,10 +430,10 @@ public class ZkFingerprintService implements FingerprintService {
             }
         }
 
-        // Debug: first record hex (helps tune format on this firmware)
         if (buffer.length >= 16) {
-            int dumpLen = Math.min(bestSize > 0 ? bestSize : 40, Math.min(40, buffer.length));
-            logger.info("AttLog first-record hex (" + dumpLen + " bytes): " + toHex(buffer, 0, dumpLen)
+            int dumpLen = Math.min(bestSize, Math.min(40, buffer.length));
+            logger.info("AttLog first-record hex (" + dumpLen + " bytes): "
+                    + toHex(buffer, 0, dumpLen)
                     + " chosenSize=" + bestSize + " valid=" + list.size());
         }
         return list;
@@ -439,13 +452,12 @@ public class ZkFingerprintService implements FingerprintService {
 
             LocalDateTime time = extractTime(buf, offset, recordSize);
             if (time == null) {
-                // Do NOT use now() — that caused false "new punch" detection
                 time = LocalDateTime.of(2000, 1, 1, 0, 0, 0);
             }
 
             int verifyType = 1;
-            if (recordSize >= 25) {
-                verifyType = buf[offset + 24] & 0xFF;
+            if (recordSize >= 27) {
+                verifyType = buf[offset + 26] & 0xFF;
             }
 
             return new VerificationResult(userId, time, verifyType);
@@ -455,46 +467,68 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     /**
-     * Accept only printable device user ids (digits / letters / _ -).
-     * Rejects binary garbage that previously became "��2".
+     * ZMM100 observed 36-byte layout (from device hex dump):
+     * <pre>
+     *  0-1  : uid (uint16 LE)
+     *  2-5  : reserved / status
+     *  6+   : ASCII user_id (null-terminated) when present
+     *  end  : ZK packed time
+     * </pre>
+     * Also supports classic 40-byte string-at-start layouts.
      */
     private String extractUserId(byte[] buf, int offset, int recordSize) {
-        // Layout A: null-terminated ASCII pin at start (up to 24 chars) — common TFT
-        int max = Math.min(24, recordSize);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < max; i++) {
-            int b = buf[offset + i] & 0xFF;
-            if (b == 0) {
-                break;
+        // Prefer printable ASCII pin at offset 6 (ZMM100 36-byte samples)
+        if (recordSize >= 16) {
+            String at6 = readAsciiId(buf, offset + 6, Math.min(18, recordSize - 6));
+            if (at6 != null) {
+                return at6;
             }
-            if (isUserIdChar(b)) {
-                sb.append((char) b);
-            } else if (sb.length() == 0) {
-                // leading non-ascii → not string layout
-                break;
-            } else {
-                break;
-            }
-        }
-        if (sb.length() > 0) {
-            return sb.toString();
         }
 
-        // Layout B: uint16 internal uid at offset 0 (old devices) — expose as decimal string
+        // Classic: ASCII at offset 0 (up to 24)
+        String at0 = readAsciiId(buf, offset, Math.min(24, recordSize));
+        if (at0 != null) {
+            return at0;
+        }
+
+        // Classic: ASCII at offset 2 (after uint16 uid)
+        if (recordSize >= 10) {
+            String at2 = readAsciiId(buf, offset + 2, Math.min(16, recordSize - 2));
+            if (at2 != null) {
+                return at2;
+            }
+        }
+
+        // Fallback: internal uid as decimal (only if looks like a real uid field)
         if (recordSize >= 2) {
             int uid = (buf[offset] & 0xFF) | ((buf[offset + 1] & 0xFF) << 8);
-            if (uid >= 1 && uid <= 65535) {
-                // Only accept if rest of "string area" is mostly zeros (heuristic)
-                int nonZero = 0;
-                for (int i = 2; i < Math.min(8, recordSize); i++) {
-                    if (buf[offset + i] != 0) nonZero++;
-                }
-                if (nonZero <= 2) {
-                    return String.valueOf(uid);
-                }
+            if (uid >= 1 && uid <= 30000) {
+                return String.valueOf(uid);
             }
         }
         return null;
+    }
+
+    private String readAsciiId(byte[] buf, int off, int maxLen) {
+        if (maxLen <= 0 || off < 0 || off >= buf.length) {
+            return null;
+        }
+        int end = Math.min(buf.length, off + maxLen);
+        StringBuilder sb = new StringBuilder();
+        for (int i = off; i < end; i++) {
+            int b = buf[i] & 0xFF;
+            if (b == 0) {
+                break;
+            }
+            if (!isUserIdChar(b)) {
+                if (sb.length() == 0) {
+                    return null;
+                }
+                break;
+            }
+            sb.append((char) b);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 
     private static boolean isUserIdChar(int b) {
@@ -505,21 +539,18 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private LocalDateTime extractTime(byte[] buf, int offset, int recordSize) {
-        // Layout A: 6-byte wall time (year-2000, mon, day, hour, min, sec) at +26 (40-byte style)
+        // 6-byte wall clock variants
         if (recordSize >= 32) {
-            LocalDateTime t = tryWallTime(buf, offset + 26);
-            if (t != null) return t;
-            t = tryWallTime(buf, offset + 27);
-            if (t != null) return t;
-            t = tryWallTime(buf, offset + 24);
-            if (t != null) return t;
+            for (int rel : new int[]{26, 27, 24, 28}) {
+                LocalDateTime t = tryWallTime(buf, offset + rel);
+                if (t != null) return t;
+            }
         }
-
-        // Layout B: classic 4-byte ZK packed time near end of 16-byte records
+        // 4-byte ZK packed time near end (common on 36-byte records)
         if (recordSize >= 8) {
-            for (int off : new int[]{offset + 4, offset + 6, offset + recordSize - 4}) {
-                if (off >= offset && off + 4 <= offset + recordSize) {
-                    LocalDateTime t = decodeZkTime(buf, off);
+            for (int rel : new int[]{recordSize - 6, recordSize - 5, recordSize - 4, 4, 6, 27, 30}) {
+                if (rel >= 0 && offset + rel + 4 <= offset + recordSize) {
+                    LocalDateTime t = decodeZkTime(buf, offset + rel);
                     if (t != null) return t;
                 }
             }
@@ -548,7 +579,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /** ZK classic packed time (little-endian uint32). */
     private LocalDateTime decodeZkTime(byte[] buf, int off) {
         long t = (buf[off] & 0xFFL)
                 | ((buf[off + 1] & 0xFFL) << 8)
