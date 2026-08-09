@@ -31,7 +31,7 @@ import java.util.logging.Logger;
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
     private static final int DEVICE_USER_ID_START = 1001;
-    private static final String FALLBACK_URL = "jdbc:sqlite:IPMCarRental.db";
+    private static final String FALLBACK_URL = "jdbc:sqlite:CarRental.db";
 
     private final DataSource dataSource;
 
