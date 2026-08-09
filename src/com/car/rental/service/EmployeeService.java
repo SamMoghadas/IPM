@@ -12,6 +12,7 @@ import java.util.logging.Logger;
 
 /**
  * Business logic for employees: DB + fingerprint device coordination.
+ * Device sessions are short-lived (connect → work → disconnect) for multi-user readiness.
  */
 @Service
 public class EmployeeService {
@@ -52,13 +53,13 @@ public class EmployeeService {
 
     /**
      * Enroll on device then save to DB. On enroll failure the device user is rolled back
-     * by {@link ZkFingerprintService#registerUserWithFingerprint}.
+     * by the fingerprint implementation when possible.
      */
     public void registerWithFingerprint(String deviceUserId, String name, String phone, int fingerIndex)
             throws SQLException, FingerprintException {
         validateEnglishName(name);
         if (deviceUserId == null || deviceUserId.isBlank()) {
-            throw new IllegalArgumentException("deviceUserId is empty");
+            throw new IllegalArgumentException("شناسه دستگاه خالی است");
         }
         if (db.isDeviceUserIdExists(deviceUserId)) {
             throw new SQLException("شناسه دستگاه قبلاً ثبت شده است: " + deviceUserId);
@@ -66,23 +67,14 @@ public class EmployeeService {
 
         ensureConnected();
         try {
-            if (fingerprintService instanceof ZkFingerprintService zk) {
-                zk.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
-            } else {
-                fingerprintService.createUser(deviceUserId, name);
-                fingerprintService.startEnroll(deviceUserId, fingerIndex, r -> {}, e -> {
-                    throw new RuntimeException(e);
-                });
-            }
+            fingerprintService.registerUserWithFingerprint(deviceUserId, name, fingerIndex);
             db.addEmployee(deviceUserId, name, phone);
         } finally {
             disconnectQuietly();
         }
     }
 
-    /**
-     * Update name on device first; only then update local DB.
-     */
+    /** Update name on device first; only then update local DB. */
     public void updateEmployee(Employee emp) throws SQLException, FingerprintException {
         if (emp == null) {
             throw new IllegalArgumentException("employee is null");
@@ -91,11 +83,7 @@ public class EmployeeService {
 
         ensureConnected();
         try {
-            if (fingerprintService instanceof ZkFingerprintService zk) {
-                zk.updateUserName(emp.getDeviceUserId(), emp.getName());
-            } else {
-                fingerprintService.createUser(emp.getDeviceUserId(), emp.getName());
-            }
+            fingerprintService.updateUserName(emp.getDeviceUserId(), emp.getName());
             db.updateEmployee(emp);
         } finally {
             disconnectQuietly();
@@ -103,18 +91,13 @@ public class EmployeeService {
     }
 
     /** Add another finger template without wiping existing ones. */
-    public void addFingerprint(String deviceUserId, int fingerIndex)
-            throws FingerprintException {
+    public void addFingerprint(String deviceUserId, int fingerIndex) throws FingerprintException {
         if (deviceUserId == null || deviceUserId.isBlank()) {
-            throw new IllegalArgumentException("deviceUserId is empty");
+            throw new IllegalArgumentException("شناسه دستگاه خالی است");
         }
         ensureConnected();
         try {
-            if (fingerprintService instanceof ZkFingerprintService zk) {
-                zk.enrollFingerOnly(deviceUserId, fingerIndex);
-            } else {
-                throw new FingerprintException("Fingerprint service does not support enrollFingerOnly");
-            }
+            fingerprintService.enrollFingerOnly(deviceUserId, fingerIndex);
         } finally {
             disconnectQuietly();
         }
@@ -141,9 +124,7 @@ public class EmployeeService {
 
     private void disconnectQuietly() {
         try {
-            if (fingerprintService.isConnected()) {
-                fingerprintService.disconnect();
-            }
+            fingerprintService.disconnect();
         } catch (Exception ignored) {
         }
     }
