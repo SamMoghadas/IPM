@@ -446,7 +446,7 @@ public class MainFrame extends JFrame {
         fingerprintService.cancelListen();
         resetReturnVerifiedState();
         returnStatusLabel.setText("احراز هویت لغو شد");
-        returnStatusLabel.setForeground(new flat.Color(80, 80, 80));
+        returnStatusLabel.setForeground(new Color(80, 80, 80));
         setReturnListeningUi(false);
     }
 
