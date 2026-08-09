@@ -161,10 +161,8 @@ public class ZkFingerprintService implements FingerprintService {
 
     /**
      * Wait for a fingerprint punch.
-     * Strategy for ZMM100_TFT / similar:
-     * 1) Snapshot current attendance log count while connected
-     * 2) Disconnect so the terminal can scan locally
-     * 3) Poll: reconnect, read logs, detect a new record, disconnect
+     * Detects new punches by growth of the raw attendance buffer (not by
+     * unreliable parsed timestamps).
      */
     @Override
     public void listenForVerification(int timeoutSeconds,
@@ -182,15 +180,10 @@ public class ZkFingerprintService implements FingerprintService {
                     connect();
                 }
 
-                List<VerificationResult> baselineLogs = readAllAttendanceLogs();
-                int baselineSize = baselineLogs.size();
-                LocalDateTime baselineLastTime = baselineLogs.isEmpty()
-                        ? null
-                        : baselineLogs.get(baselineLogs.size() - 1).getDeviceTime();
-                logger.info("Attendance baseline size=" + baselineSize
-                        + (baselineLastTime != null ? " last=" + baselineLastTime : ""));
+                AttLogSnapshot baseline = readAttendanceSnapshot();
+                logger.info("Attendance baseline rawBytes=" + baseline.rawSize
+                        + " validRecords=" + baseline.records.size());
 
-                // Free the device so the user can punch on the terminal itself
                 disconnectQuietly();
                 logger.info("Device disconnected for local punch — place finger on terminal");
 
@@ -209,21 +202,33 @@ public class ZkFingerprintService implements FingerprintService {
 
                     try {
                         connect();
-                        List<VerificationResult> logs = readAllAttendanceLogs();
+                        AttLogSnapshot snap = readAttendanceSnapshot();
                         disconnectQuietly();
 
-                        VerificationResult newer = findNewerRecord(logs, baselineSize, baselineLastTime);
-                        if (newer != null) {
-                            logger.info("New punch detected userId=" + newer.getDeviceUserId()
-                                    + " time=" + newer.getDeviceTime());
-                            listening.set(false);
-                            // leave disconnected; caller may connect again if needed
-                            if (onVerified != null) {
-                                onVerified.accept(newer);
+                        if (snap.rawSize > baseline.rawSize) {
+                            VerificationResult newer = pickNewestValid(snap.records);
+                            if (newer == null) {
+                                // Raw grew but parse failed — try parse only the tail bytes
+                                newer = parseTailRecord(snap.rawBuffer, baseline.rawSize);
                             }
-                            return;
+                            if (newer != null) {
+                                logger.info("New punch detected userId=" + newer.getDeviceUserId()
+                                        + " time=" + newer.getDeviceTime()
+                                        + " raw " + baseline.rawSize + "->" + snap.rawSize);
+                                listening.set(false);
+                                if (onVerified != null) {
+                                    onVerified.accept(newer);
+                                }
+                                return;
+                            }
+                            logger.warning("Attendance buffer grew but no valid userId parsed. "
+                                    + "raw " + baseline.rawSize + "->" + snap.rawSize
+                                    + " — check record format");
+                            // Still advance baseline so we don't spin on same growth
+                            baseline = snap;
+                        } else {
+                            logger.fine("Poll: no new attendance (raw=" + snap.rawSize + ")");
                         }
-                        logger.fine("Poll: no new attendance yet (size=" + logs.size() + ")");
                     } catch (Exception pollEx) {
                         logger.log(Level.WARNING, "Attendance poll failed, will retry", pollEx);
                         try {
@@ -254,44 +259,60 @@ public class ZkFingerprintService implements FingerprintService {
         });
     }
 
-    private static VerificationResult findNewerRecord(List<VerificationResult> logs,
-                                                     int baselineSize,
-                                                     LocalDateTime baselineLastTime) {
-        if (logs == null || logs.isEmpty()) {
+    private static VerificationResult pickNewestValid(List<VerificationResult> records) {
+        if (records == null || records.isEmpty()) {
             return null;
         }
-        if (logs.size() > baselineSize) {
-            return logs.get(logs.size() - 1);
+        return records.get(records.size() - 1);
+    }
+
+    private VerificationResult parseTailRecord(byte[] buffer, int fromOffset) {
+        if (buffer == null || fromOffset < 0 || fromOffset >= buffer.length) {
+            return null;
         }
-        if (baselineLastTime != null) {
-            VerificationResult last = logs.get(logs.size() - 1);
-            if (last.getDeviceTime() != null && last.getDeviceTime().isAfter(baselineLastTime)) {
-                return last;
+        int tailLen = buffer.length - fromOffset;
+        int[] sizes = {40, 36, 32, 16};
+        for (int rs : sizes) {
+            if (tailLen >= rs) {
+                // parse the last full record in the buffer
+                int start = buffer.length - rs;
+                VerificationResult r = parseAttendanceRecord(buffer, start, rs);
+                if (r != null) {
+                    return r;
+                }
             }
         }
         return null;
     }
 
-    /**
-     * Read full attendance log from device (CMD_ATTLOG_RRQ + buffered DATA).
-     */
-    private synchronized List<VerificationResult> readAllAttendanceLogs()
+    private static final class AttLogSnapshot {
+        final int rawSize;
+        final byte[] rawBuffer;
+        final List<VerificationResult> records;
+
+        AttLogSnapshot(byte[] rawBuffer, List<VerificationResult> records) {
+            this.rawBuffer = rawBuffer == null ? new byte[0] : rawBuffer;
+            this.rawSize = this.rawBuffer.length;
+            this.records = records == null ? new ArrayList<>() : records;
+        }
+    }
+
+    private synchronized AttLogSnapshot readAttendanceSnapshot()
             throws IOException, FingerprintException {
         ensureConnected();
         disableDevice();
         try {
             byte[] reply = sendCommand(CMD_ATTLOG_RRQ, new byte[0]);
             if (reply == null) {
-                return new ArrayList<>();
+                return new AttLogSnapshot(new byte[0], new ArrayList<>());
             }
             int cmd = getCommand(reply);
             if (cmd == CMD_ACK_OK || cmd == CMD_ACK_ERROR) {
-                // empty or not supported
-                return new ArrayList<>();
+                return new AttLogSnapshot(new byte[0], new ArrayList<>());
             }
             if (cmd != CMD_PREPARE_DATA) {
                 logger.warning("ATTLOG_RRQ unexpected cmd=" + cmd);
-                return new ArrayList<>();
+                return new AttLogSnapshot(new byte[0], new ArrayList<>());
             }
 
             int size = 0;
@@ -302,11 +323,12 @@ public class ZkFingerprintService implements FingerprintService {
                         | ((reply[19] & 0xFF) << 24);
             }
             if (size <= 0) {
-                return new ArrayList<>();
+                return new AttLogSnapshot(new byte[0], new ArrayList<>());
             }
 
             byte[] buffer = readDataBuffer(size);
-            return parseAttendanceBuffer(buffer);
+            List<VerificationResult> records = parseAttendanceBuffer(buffer);
+            return new AttLogSnapshot(buffer, records);
         } finally {
             try {
                 enableDevice();
@@ -363,67 +385,206 @@ public class ZkFingerprintService implements FingerprintService {
             return list;
         }
 
+        // Prefer sizes that both divide the buffer and yield valid user ids
         int[] candidates = {40, 36, 32, 16};
-        int recordSize = 40;
+        int bestSize = 0;
+        int bestValid = -1;
         for (int c : candidates) {
-            if (buffer.length % c == 0) {
-                recordSize = c;
-                break;
+            if (buffer.length % c != 0) {
+                continue;
+            }
+            int valid = 0;
+            for (int i = 0; i + c <= buffer.length; i += c) {
+                if (parseAttendanceRecord(buffer, i, c) != null) {
+                    valid++;
+                }
+            }
+            if (valid > bestValid) {
+                bestValid = valid;
+                bestSize = c;
             }
         }
 
-        for (int i = 0; i + recordSize <= buffer.length; i += recordSize) {
-            VerificationResult r = parseAttendanceRecord(buffer, i, recordSize);
+        if (bestSize == 0) {
+            // Fallback: try 40 even if remainder
+            bestSize = 40;
+        }
+
+        for (int i = 0; i + bestSize <= buffer.length; i += bestSize) {
+            VerificationResult r = parseAttendanceRecord(buffer, i, bestSize);
             if (r != null) {
                 list.add(r);
             }
         }
-        logger.info("Parsed attendance records: " + list.size() + " (recordSize=" + recordSize + ")");
+
+        // Debug: first record hex (helps tune format on this firmware)
+        if (buffer.length >= 16) {
+            int dumpLen = Math.min(bestSize > 0 ? bestSize : 40, Math.min(40, buffer.length));
+            logger.info("AttLog first-record hex (" + dumpLen + " bytes): " + toHex(buffer, 0, dumpLen)
+                    + " chosenSize=" + bestSize + " valid=" + list.size());
+        }
         return list;
     }
 
     private VerificationResult parseAttendanceRecord(byte[] buf, int offset, int recordSize) {
         try {
-            int idMax = Math.min(24, recordSize);
-            int end = offset;
-            while (end < offset + idMax && buf[end] != 0) {
-                end++;
-            }
-            if (end == offset) {
-                return null;
-            }
-            String userId = new String(buf, offset, end - offset, StandardCharsets.US_ASCII).trim();
-            if (userId.isEmpty()) {
+            if (offset + recordSize > buf.length) {
                 return null;
             }
 
-            LocalDateTime time = LocalDateTime.now();
+            String userId = extractUserId(buf, offset, recordSize);
+            if (userId == null) {
+                return null;
+            }
+
+            LocalDateTime time = extractTime(buf, offset, recordSize);
+            if (time == null) {
+                // Do NOT use now() — that caused false "new punch" detection
+                time = LocalDateTime.of(2000, 1, 1, 0, 0, 0);
+            }
+
             int verifyType = 1;
-
-            // Common TFT layout: time fields near end of 40-byte record
-            if (recordSize >= 40) {
-                int base = offset;
-                verifyType = buf[base + 24] & 0xFF;
-                int y = (buf[base + 26] & 0xFF) + 2000;
-                int mo = buf[base + 27] & 0xFF;
-                int d = buf[base + 28] & 0xFF;
-                int h = buf[base + 29] & 0xFF;
-                int mi = buf[base + 30] & 0xFF;
-                int s = buf[base + 31] & 0xFF;
-                try {
-                    time = LocalDateTime.of(y, mo, d, h, mi, s);
-                } catch (Exception ignored) {
-                    time = LocalDateTime.now();
-                }
-            } else if (recordSize >= 16) {
-                // older binary time encoding (optional best-effort)
-                time = LocalDateTime.now();
+            if (recordSize >= 25) {
+                verifyType = buf[offset + 24] & 0xFF;
             }
 
             return new VerificationResult(userId, time, verifyType);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Accept only printable device user ids (digits / letters / _ -).
+     * Rejects binary garbage that previously became "��2".
+     */
+    private String extractUserId(byte[] buf, int offset, int recordSize) {
+        // Layout A: null-terminated ASCII pin at start (up to 24 chars) — common TFT
+        int max = Math.min(24, recordSize);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < max; i++) {
+            int b = buf[offset + i] & 0xFF;
+            if (b == 0) {
+                break;
+            }
+            if (isUserIdChar(b)) {
+                sb.append((char) b);
+            } else if (sb.length() == 0) {
+                // leading non-ascii → not string layout
+                break;
+            } else {
+                break;
+            }
+        }
+        if (sb.length() > 0) {
+            return sb.toString();
+        }
+
+        // Layout B: uint16 internal uid at offset 0 (old devices) — expose as decimal string
+        if (recordSize >= 2) {
+            int uid = (buf[offset] & 0xFF) | ((buf[offset + 1] & 0xFF) << 8);
+            if (uid >= 1 && uid <= 65535) {
+                // Only accept if rest of "string area" is mostly zeros (heuristic)
+                int nonZero = 0;
+                for (int i = 2; i < Math.min(8, recordSize); i++) {
+                    if (buf[offset + i] != 0) nonZero++;
+                }
+                if (nonZero <= 2) {
+                    return String.valueOf(uid);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isUserIdChar(int b) {
+        return (b >= '0' && b <= '9')
+                || (b >= 'A' && b <= 'Z')
+                || (b >= 'a' && b <= 'z')
+                || b == '_' || b == '-';
+    }
+
+    private LocalDateTime extractTime(byte[] buf, int offset, int recordSize) {
+        // Layout A: 6-byte wall time (year-2000, mon, day, hour, min, sec) at +26 (40-byte style)
+        if (recordSize >= 32) {
+            LocalDateTime t = tryWallTime(buf, offset + 26);
+            if (t != null) return t;
+            t = tryWallTime(buf, offset + 27);
+            if (t != null) return t;
+            t = tryWallTime(buf, offset + 24);
+            if (t != null) return t;
+        }
+
+        // Layout B: classic 4-byte ZK packed time near end of 16-byte records
+        if (recordSize >= 8) {
+            for (int off : new int[]{offset + 4, offset + 6, offset + recordSize - 4}) {
+                if (off >= offset && off + 4 <= offset + recordSize) {
+                    LocalDateTime t = decodeZkTime(buf, off);
+                    if (t != null) return t;
+                }
+            }
+        }
+        return null;
+    }
+
+    private LocalDateTime tryWallTime(byte[] buf, int off) {
+        if (off + 6 > buf.length) return null;
+        int y = (buf[off] & 0xFF) + 2000;
+        int mo = buf[off + 1] & 0xFF;
+        int d = buf[off + 2] & 0xFF;
+        int h = buf[off + 3] & 0xFF;
+        int mi = buf[off + 4] & 0xFF;
+        int s = buf[off + 5] & 0xFF;
+        if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
+            return null;
+        }
+        if (y < 2000 || y > 2090) {
+            return null;
+        }
+        try {
+            return LocalDateTime.of(y, mo, d, h, mi, s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** ZK classic packed time (little-endian uint32). */
+    private LocalDateTime decodeZkTime(byte[] buf, int off) {
+        long t = (buf[off] & 0xFFL)
+                | ((buf[off + 1] & 0xFFL) << 8)
+                | ((buf[off + 2] & 0xFFL) << 16)
+                | ((buf[off + 3] & 0xFFL) << 24);
+        if (t == 0 || t > 0x7FFFFFFFL) {
+            return null;
+        }
+        int second = (int) (t % 60);
+        t /= 60;
+        int minute = (int) (t % 60);
+        t /= 60;
+        int hour = (int) (t % 24);
+        t /= 24;
+        int day = (int) (t % 31) + 1;
+        t /= 31;
+        int month = (int) (t % 12) + 1;
+        t /= 12;
+        int year = (int) t + 2000;
+        if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2090) {
+            return null;
+        }
+        try {
+            return LocalDateTime.of(year, month, day, hour, minute, second);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String toHex(byte[] buf, int off, int len) {
+        StringBuilder sb = new StringBuilder(len * 3);
+        for (int i = 0; i < len; i++) {
+            if (i > 0) sb.append(' ');
+            sb.append(String.format("%02X", buf[off + i] & 0xFF));
+        }
+        return sb.toString();
     }
 
     @Override
