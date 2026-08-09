@@ -11,6 +11,7 @@ public class FingerprintProperties {
     private int port = 4370;
     private boolean mock = false;
     private int connectTimeoutMs = 8000;
+    private int verifyTimeoutSeconds = 40;
 
     public String getHost() {
         return host;
@@ -42,5 +43,13 @@ public class FingerprintProperties {
 
     public void setConnectTimeoutMs(int connectTimeoutMs) {
         this.connectTimeoutMs = connectTimeoutMs;
+    }
+
+    public int getVerifyTimeoutSeconds() {
+        return verifyTimeoutSeconds;
+    }
+
+    public void setVerifyTimeoutSeconds(int verifyTimeoutSeconds) {
+        this.verifyTimeoutSeconds = verifyTimeoutSeconds;
     }
 }
