@@ -6,7 +6,7 @@ spring:
     headless: false
   datasource:
     # Local SQLite file next to the working directory
-    url: jdbc:sqlite:IPMCarRental.db
+    url: jdbc:sqlite:CarRental.db
     driver-class-name: org.sqlite.JDBC
   # SQLite does not need a real pool size; keep it small
   jdbc:
