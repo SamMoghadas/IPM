@@ -5,22 +5,20 @@ spring:
     # Required so Swing UI can open windows
     headless: false
   datasource:
-    # Local SQLite file next to the working directory
-    url: jdbc:sqlite:CarRental.db
+    # Override with env DB_PATH when deploying (e.g. /var/saman/CarRental.db)
+    url: jdbc:sqlite:${DB_PATH:CarRental.db}
     driver-class-name: org.sqlite.JDBC
-  # SQLite does not need a real pool size; keep it small
   jdbc:
     template:
       query-timeout: 30
 
-# Fingerprint device — works when device is on the same LAN as this machine.
-# Later on the real server, only change host/port here (or env vars).
+# Fingerprint device — same LAN as this process today; on server set FINGERPRINT_HOST.
 fingerprint:
-  host: 192.168.1.200
-  port: 4370
-  # set true to run UI without a physical device
-  mock: false
-  connect-timeout-ms: 8000
+  host: ${FINGERPRINT_HOST:192.168.1.200}
+  port: ${FINGERPRINT_PORT:4370}
+  mock: ${FINGERPRINT_MOCK:false}
+  connect-timeout-ms: ${FINGERPRINT_CONNECT_TIMEOUT_MS:8000}
+  verify-timeout-seconds: ${FINGERPRINT_VERIFY_TIMEOUT_SECONDS:40}
 
 logging:
   level:
