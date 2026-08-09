@@ -1,5 +1,6 @@
 package com.car.rental.ui.frames;
 
+import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
@@ -45,9 +46,13 @@ public class MainFrame extends JFrame {
     private RentalRecord returnActiveRental;
 
     public MainFrame() {
-        db = new DatabaseManager();
+        this(resolveDatabaseManager(), resolveFingerprintService());
+    }
+
+    public MainFrame(DatabaseManager db, FingerprintService fingerprintService) {
+        this.db = db;
+        this.fingerprintService = fingerprintService;
         db.initDatabase();
-        fingerprintService = new ZkFingerprintService("192.168.1.200", 4370);
         createMainUI();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
@@ -60,6 +65,26 @@ public class MainFrame extends JFrame {
                 }
             }
         });
+    }
+
+    private static DatabaseManager resolveDatabaseManager() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(DatabaseManager.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new DatabaseManager();
+    }
+
+    private static FingerprintService resolveFingerprintService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(FingerprintService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new ZkFingerprintService("192.168.1.200", 4370);
     }
 
     private void createMainUI() {
@@ -498,7 +523,8 @@ public class MainFrame extends JFrame {
         return b;
     }
 
+    /** Prefer {@link com.car.rental.SamanApplication} so Spring context is active. */
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(MainFrame::new);
+        com.car.rental.SamanApplication.main(args);
     }
 }
