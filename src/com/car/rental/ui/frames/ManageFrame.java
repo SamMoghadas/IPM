@@ -1,8 +1,13 @@
 package com.car.rental.ui.frames;
 
-import com.car.rental.model.Car;
+import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
+import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
+import com.car.rental.service.CarService;
+import com.car.rental.service.EmployeeService;
+import com.car.rental.service.FingerprintService;
+import com.car.rental.service.ZkFingerprintService;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -14,15 +19,38 @@ import java.sql.SQLException;
 import java.util.List;
 
 public class ManageFrame extends JFrame {
-    private final DatabaseManager db;
+    private final CarService carService;
+    private final EmployeeService employeeService;
     private JTable carTable, employeeTable;
     private DefaultTableModel carModel, employeeModel;
 
     public ManageFrame() {
-        db = new DatabaseManager();
+        carService = resolveCarService();
+        employeeService = resolveEmployeeService();
         initializeUI();
         loadDataFromDB();
         setVisible(true);
+    }
+
+    private static CarService resolveCarService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(CarService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new CarService(new DatabaseManager());
+    }
+
+    private static EmployeeService resolveEmployeeService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(EmployeeService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        FingerprintService fp = new ZkFingerprintService("192.168.1.200", 4370);
+        return new EmployeeService(new DatabaseManager(), fp);
     }
 
     private void initializeUI() {
@@ -135,13 +163,13 @@ public class ManageFrame extends JFrame {
         carModel.setRowCount(0);
         employeeModel.setRowCount(0);
         try {
-            for (String car : db.getAllCars()) {
+            for (String car : carService.getAllCars()) {
                 String[] parts = car.split(" - ");
                 if (parts.length < 4) continue;
                 String status = parts[3].equals("1") ? "در ماموریت" : "آزاد";
                 carModel.addRow(new Object[]{parts[0], parts[1], parts[2], status});
             }
-            List<Employee> employees = db.getAllEmployees();
+            List<Employee> employees = employeeService.getAllEmployees();
             for (Employee emp : employees) {
                 String status = emp.isRenting() ? "در ماموریت" : "آزاد";
                 employeeModel.addRow(new Object[]{
@@ -162,21 +190,16 @@ public class ManageFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
             return;
         }
-
         int modelRow = carTable.convertRowIndexToModel(viewRow);
-
         String model = carModel.getValueAt(modelRow, 0).toString();
         String color = carModel.getValueAt(modelRow, 1).toString();
         String plate = carModel.getValueAt(modelRow, 2).toString();
         String status = carModel.getValueAt(modelRow, 3).toString();
-
         if (status.equals("در ماموریت")) {
             JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در ماموریت وجود ندارد!");
             return;
         }
-
         Car car = new Car(model, plate, color);
-
         dispose();
         EditFrame editFrame = new EditFrame(car);
         editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
@@ -194,25 +217,20 @@ public class ManageFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
             return;
         }
-
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
-
         String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
         String status = employeeModel.getValueAt(modelRow, 3).toString();
-
         if (status.equals("در ماموریت")) {
             JOptionPane.showMessageDialog(this,
                     "این کارمند در مأموریت است و امکان ویرایش آن وجود ندارد!");
             return;
         }
-
         try {
-            Employee emp = db.findByDeviceUserId(deviceUserId);
+            Employee emp = employeeService.findByDeviceUserId(deviceUserId);
             if (emp == null) {
                 JOptionPane.showMessageDialog(this, "کارمند پیدا نشد!");
                 return;
             }
-
             dispose();
             EditFrame editFrame = new EditFrame(emp);
             editFrame.addWindowListener(new java.awt.event.WindowAdapter() {
@@ -233,15 +251,13 @@ public class ManageFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "لطفاً یک ماشین انتخاب کنید!");
             return;
         }
-
         int modelRow = carTable.convertRowIndexToModel(viewRow);
-
         if (carModel.getValueAt(modelRow, 3).equals("آزاد")) {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این ماشین را حذف کنید؟");
             if (confirmed) {
                 try {
                     String plate = carModel.getValueAt(modelRow, 2).toString();
-                    db.deleteCar(plate, this::loadDataFromDB);
+                    carService.deleteCar(plate, this::loadDataFromDB);
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
                 } catch (SQLException e) {
                     JOptionPane.showMessageDialog(this, "خطا در حذف ماشین: " + e.getMessage());
@@ -258,15 +274,13 @@ public class ManageFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "لطفاً یک کارمند انتخاب کنید!");
             return;
         }
-
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
-
         if (employeeModel.getValueAt(modelRow, 3).equals("آزاد")) {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این کارمند را حذف کنید؟");
             if (confirmed) {
                 try {
                     String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
-                    db.deleteEmployeeByDeviceUserId(deviceUserId, this::loadDataFromDB);
+                    employeeService.deleteEmployee(deviceUserId, this::loadDataFromDB);
                     JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
                 } catch (SQLException e) {
                     JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());
@@ -280,34 +294,27 @@ public class ManageFrame extends JFrame {
     private boolean deleteConfirmDialog(String message) {
         JDialog dialog = new JDialog(this, "تأیید حذف", true);
         dialog.setLayout(new BorderLayout(10, 10));
-
         JLabel msgLabel = new JLabel(message, SwingConstants.CENTER);
         dialog.add(msgLabel, BorderLayout.CENTER);
-
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton yesButton = new JButton("بله، حذف شود");
         yesButton.setBackground(Color.RED);
         yesButton.setForeground(Color.WHITE);
-
         JButton noButton = new JButton("خیر، منصرف شدم");
         noButton.setBackground(Color.GRAY);
         noButton.setForeground(Color.WHITE);
-
         buttonPanel.add(yesButton);
         buttonPanel.add(noButton);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
-
         final boolean[] confirmed = {false};
         yesButton.addActionListener(e -> {
             confirmed[0] = true;
             dialog.dispose();
         });
         noButton.addActionListener(e -> dialog.dispose());
-
         dialog.setSize(350, 150);
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
-
         return confirmed[0];
     }
 }
