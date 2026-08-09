@@ -1,7 +1,8 @@
 package com.car.rental.ui.frames;
 
-import com.car.rental.config.SpringContext;
-import com.car.rental.db.DatabaseManager;
+import com.car.rental.config.FingerprintProperties;
+import com.car.rental.config.ServiceLookup;
+import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
 import com.car.rental.service.CarService;
@@ -9,7 +10,6 @@ import com.car.rental.service.FingerprintException;
 import com.car.rental.service.FingerprintService;
 import com.car.rental.service.RentalService;
 import com.car.rental.service.VerificationResult;
-import com.car.rental.service.ZkFingerprintService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -21,12 +21,12 @@ import java.util.logging.Logger;
 
 public class MainFrame extends JFrame {
 
-    private static final int FP_TIMEOUT_SECONDS = 40;
     private static final Logger logger = Logger.getLogger(MainFrame.class.getName());
 
     private final CarService carService;
     private final RentalService rentalService;
     private final FingerprintService fingerprintService;
+    private final int fpTimeoutSeconds;
 
     private JComboBox<String> carCombo;
     private JTextField destinationField;
@@ -49,55 +49,36 @@ public class MainFrame extends JFrame {
     private RentalRecord returnActiveRental;
 
     public MainFrame() {
-        this(resolveCarService(), resolveRentalService(), resolveFingerprintService());
+        this(
+                ServiceLookup.get(CarService.class),
+                ServiceLookup.get(RentalService.class),
+                ServiceLookup.get(FingerprintService.class),
+                resolveTimeoutSeconds()
+        );
     }
 
-    public MainFrame(CarService carService, RentalService rentalService, FingerprintService fingerprintService) {
+    public MainFrame(CarService carService, RentalService rentalService,
+                     FingerprintService fingerprintService, int fpTimeoutSeconds) {
         this.carService = carService;
         this.rentalService = rentalService;
         this.fingerprintService = fingerprintService;
+        this.fpTimeoutSeconds = fpTimeoutSeconds > 0 ? fpTimeoutSeconds : 40;
         createMainUI();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosed(java.awt.event.WindowEvent e) {
-                try {
-                    fingerprintService.cancelListen();
-                    fingerprintService.disconnect();
-                } catch (Exception ignored) {
-                }
+                releaseDevice();
             }
         });
     }
 
-    private static CarService resolveCarService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(CarService.class);
-            } catch (Exception ignored) {
-            }
+    private static int resolveTimeoutSeconds() {
+        try {
+            return ServiceLookup.get(FingerprintProperties.class).getVerifyTimeoutSeconds();
+        } catch (Exception e) {
+            return 40;
         }
-        return new CarService(new DatabaseManager());
-    }
-
-    private static RentalService resolveRentalService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(RentalService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        return new RentalService(new DatabaseManager());
-    }
-
-    private static FingerprintService resolveFingerprintService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(FingerprintService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        return new ZkFingerprintService("192.168.1.200", 4370);
     }
 
     private void createMainUI() {
@@ -265,10 +246,8 @@ public class MainFrame extends JFrame {
         pickupStatusLabel.setText("در انتظار اثر انگشت... انگشت را روی دستگاه بگذارید");
         pickupStatusLabel.setForeground(new Color(180, 120, 0));
 
-        ensureFingerprintConnected();
-
         fingerprintService.listenForVerification(
-                FP_TIMEOUT_SECONDS,
+                fpTimeoutSeconds,
                 result -> SwingUtilities.invokeLater(() -> onPickupVerified(result)),
                 () -> SwingUtilities.invokeLater(this::onPickupTimeout),
                 err -> SwingUtilities.invokeLater(() -> onPickupError(err))
@@ -320,6 +299,7 @@ public class MainFrame extends JFrame {
 
     private void cancelPickupAuth() {
         fingerprintService.cancelListen();
+        releaseDevice();
         resetPickupVerifiedState();
         pickupStatusLabel.setText("احراز هویت لغو شد");
         pickupStatusLabel.setForeground(new Color(80, 80, 80));
@@ -343,7 +323,7 @@ public class MainFrame extends JFrame {
 
         try {
             String[] selectedCar = Objects.requireNonNull(carCombo.getSelectedItem()).toString().split(" - ");
-            String carPlate = selectedCar[2];
+            String carPlate = selectedCar[selectedCar.length - 1];
             String pickupTime = formatDeviceTime(pickupDeviceTime);
 
             rentalService.pickup(pickupDeviceUserId, carPlate, pickupTime, dest);
@@ -386,10 +366,8 @@ public class MainFrame extends JFrame {
         returnStatusLabel.setText("در انتظار اثر انگشت... انگشت را روی دستگاه بگذارید");
         returnStatusLabel.setForeground(new Color(180, 120, 0));
 
-        ensureFingerprintConnected();
-
         fingerprintService.listenForVerification(
-                FP_TIMEOUT_SECONDS,
+                fpTimeoutSeconds,
                 result -> SwingUtilities.invokeLater(() -> onReturnVerified(result)),
                 () -> SwingUtilities.invokeLater(this::onReturnTimeout),
                 err -> SwingUtilities.invokeLater(() -> onReturnError(err))
@@ -444,6 +422,7 @@ public class MainFrame extends JFrame {
 
     private void cancelReturnAuth() {
         fingerprintService.cancelListen();
+        releaseDevice();
         resetReturnVerifiedState();
         returnStatusLabel.setText("احراز هویت لغو شد");
         returnStatusLabel.setForeground(new Color(80, 80, 80));
@@ -493,22 +472,20 @@ public class MainFrame extends JFrame {
         returnConfirmButton.setEnabled(false);
     }
 
-    private void ensureFingerprintConnected() {
+    /** Short-lived sessions: release device after each auth cycle or window close. */
+    private void releaseDevice() {
         try {
-            if (!fingerprintService.isConnected()) {
-                fingerprintService.connect();
-            }
-        } catch (FingerprintException e) {
-            JOptionPane.showMessageDialog(this, "اتصال به دستگاه اثر انگشت ناموفق بود:\n" + e.getMessage());
-            throw new RuntimeException(e);
+            fingerprintService.cancelListen();
+            fingerprintService.disconnect();
+        } catch (Exception ignored) {
         }
     }
 
     public void loadCars() {
         carCombo.removeAllItems();
         try {
-            for (String car : carService.getAvailableCars()) {
-                carCombo.addItem(car);
+            for (Car car : carService.getAvailableCars()) {
+                carCombo.addItem(car.getModel() + " - " + car.getColor() + " - " + car.getPlate());
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
