@@ -1,11 +1,8 @@
 package com.car.rental.ui.frames;
 
-import com.car.rental.config.SpringContext;
-import com.car.rental.db.DatabaseManager;
+import com.car.rental.config.ServiceLookup;
 import com.car.rental.service.CarService;
 import com.car.rental.service.EmployeeService;
-import com.car.rental.service.FingerprintService;
-import com.car.rental.service.ZkFingerprintService;
 import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
@@ -39,8 +36,8 @@ public class AddFrame extends JFrame {
     private JLabel employeeStatusLabel;
 
     public AddFrame() {
-        this.carService = resolveCarService();
-        this.employeeService = resolveEmployeeService();
+        this.carService = ServiceLookup.get(CarService.class);
+        this.employeeService = ServiceLookup.get(EmployeeService.class);
 
         setTitle("اضافه کردن ماشین و کارمند");
         setSize(640, 640);
@@ -131,27 +128,6 @@ public class AddFrame extends JFrame {
         setVisible(true);
     }
 
-    private static CarService resolveCarService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(CarService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        return new CarService(new DatabaseManager());
-    }
-
-    private static EmployeeService resolveEmployeeService() {
-        if (SpringContext.isActive()) {
-            try {
-                return SpringContext.getBean(EmployeeService.class);
-            } catch (Exception ignored) {
-            }
-        }
-        FingerprintService fp = new ZkFingerprintService("192.168.1.200", 4370);
-        return new EmployeeService(new DatabaseManager(), fp);
-    }
-
     private void refreshNextDeviceUserId() {
         try {
             deviceUserIdField.setText(employeeService.getNextDeviceUserId());
@@ -213,12 +189,6 @@ public class AddFrame extends JFrame {
                             "ثبت کارمند ناموفق بود:\n" + msg,
                             "خطا",
                             JOptionPane.ERROR_MESSAGE);
-                    try {
-                        if (employeeService.isDeviceUserIdExists(deviceUserId)) {
-                            // id already taken — refresh
-                        }
-                    } catch (SQLException ignored) {
-                    }
                     refreshNextDeviceUserId();
                 } finally {
                     setEmployeeFormEnabled(true);
