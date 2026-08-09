@@ -11,18 +11,20 @@ import java.util.function.Consumer;
 
 /**
  * Fake implementation for developing / testing UI without a real device.
- * After listenForVerification is called, simulates a successful scan after 2 seconds.
  */
 public class MockFingerprintService implements FingerprintService {
 
     private boolean connected;
     private final List<DeviceUser> users = new ArrayList<>();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "mock-fingerprint");
+        t.setDaemon(true);
+        return t;
+    });
     private ScheduledFuture<?> pendingListen;
     private volatile boolean listening;
 
-    /** User id that will be returned by the simulated scan. Change as needed for tests. */
-    private String mockUserId = "30";
+    private String mockUserId = "1001";
 
     public void setMockUserId(String mockUserId) {
         this.mockUserId = mockUserId;
@@ -50,15 +52,18 @@ public class MockFingerprintService implements FingerprintService {
                                       Runnable onTimeout,
                                       Consumer<FingerprintException> onError) {
         if (!connected) {
-            if (onError != null) {
-                onError.accept(new FingerprintException("Not connected to device"));
+            try {
+                connect();
+            } catch (Exception e) {
+                if (onError != null) {
+                    onError.accept(new FingerprintException("Not connected to device"));
+                }
+                return;
             }
-            return;
         }
         cancelListen();
         listening = true;
 
-        // Simulate successful scan after 2 seconds
         pendingListen = scheduler.schedule(() -> {
             if (!listening) return;
             listening = false;
@@ -67,20 +72,27 @@ public class MockFingerprintService implements FingerprintService {
                     LocalDateTime.now(),
                     1
             );
-            if (onVerified != null) {
-                onVerified.accept(result);
+            try {
+                if (onVerified != null) {
+                    onVerified.accept(result);
+                }
+            } finally {
+                disconnect();
             }
         }, 2, TimeUnit.SECONDS);
 
-        // Timeout
         scheduler.schedule(() -> {
             if (listening) {
                 listening = false;
                 if (pendingListen != null) {
                     pendingListen.cancel(false);
                 }
-                if (onTimeout != null) {
-                    onTimeout.run();
+                try {
+                    if (onTimeout != null) {
+                        onTimeout.run();
+                    }
+                } finally {
+                    disconnect();
                 }
             }
         }, timeoutSeconds, TimeUnit.SECONDS);
@@ -107,8 +119,30 @@ public class MockFingerprintService implements FingerprintService {
     }
 
     @Override
+    public void updateUserName(String deviceUserId, String name) {
+        for (int i = 0; i < users.size(); i++) {
+            DeviceUser u = users.get(i);
+            if (u.getDeviceUserId().equals(deviceUserId)) {
+                users.set(i, new DeviceUser(deviceUserId, name, u.getPrivilege()));
+                return;
+            }
+        }
+        createUser(deviceUserId, name);
+    }
+
+    @Override
     public void deleteUser(String deviceUserId) {
         users.removeIf(u -> u.getDeviceUserId().equals(deviceUserId));
+    }
+
+    @Override
+    public void registerUserWithFingerprint(String deviceUserId, String name, int fingerIndex) {
+        createUser(deviceUserId, name);
+    }
+
+    @Override
+    public void enrollFingerOnly(String deviceUserId, int fingerIndex) {
+        // no-op success for mock
     }
 
     @Override
