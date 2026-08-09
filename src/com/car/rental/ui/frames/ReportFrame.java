@@ -1,8 +1,10 @@
 package com.car.rental.ui.frames;
 
+import com.car.rental.config.SpringContext;
 import com.car.rental.db.DatabaseManager;
-import com.car.rental.ui.components.PlateInputPanel;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.service.RentalService;
+import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
 import javax.swing.table.*;
@@ -21,7 +23,6 @@ public class ReportFrame extends JFrame {
     private static final Logger logger = Logger.getLogger(ReportFrame.class.getName());
 
     public ReportFrame() {
-
         setTitle("گزارش سفرهای ماشین");
         setSize(900, 450);
         setLayout(new BorderLayout(10, 10));
@@ -47,7 +48,6 @@ public class ReportFrame extends JFrame {
         searchPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         PlateInputPanel plateSearchPanel = new PlateInputPanel();
-
         JTextField searchEmployeeField = new JTextField(10);
         searchEmployeeField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
 
@@ -63,33 +63,37 @@ public class ReportFrame extends JFrame {
         JButton searchButton = new JButton("جستجو");
         searchButton.setBackground(new Color(0, 120, 215));
         searchButton.setForeground(Color.WHITE);
-
         searchButton.addActionListener(e -> applyFilters(plateSearchPanel, searchEmployeeField));
 
         searchPanel.add(new JLabel("پلاک:"));
         searchPanel.add(plateSearchPanel);
-
         searchPanel.add(new JLabel("شناسه کاربر:"));
         searchPanel.add(searchEmployeeField);
-
         searchPanel.add(new JLabel("تاریخ:"));
         searchPanel.add(searchDateField);
-
         searchPanel.add(searchButton);
 
         topPanel.add(searchPanel, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
         loadTable();
-
         setVisible(true);
     }
 
-    private void loadTable() {
-        DatabaseManager db = new DatabaseManager();
+    private static RentalService resolveRentalService() {
+        if (SpringContext.isActive()) {
+            try {
+                return SpringContext.getBean(RentalService.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return new RentalService(new DatabaseManager());
+    }
 
+    private void loadTable() {
+        RentalService rentalService = resolveRentalService();
         try {
-            List<RentalRecord> rentalRecords = db.getRentalReport();
+            List<RentalRecord> rentalRecords = rentalService.getRentalReport();
 
             String[] columns = {"شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"};
             Object[][] data = new Object[rentalRecords.size()][columns.length];
@@ -128,7 +132,6 @@ public class ReportFrame extends JFrame {
 
             JScrollPane scrollPane = new JScrollPane(table);
             scrollPane.getViewport().setBackground(Color.WHITE);
-
             add(scrollPane, BorderLayout.CENTER);
 
         } catch (SQLException e) {
@@ -137,7 +140,6 @@ public class ReportFrame extends JFrame {
     }
 
     private void applyFilters(PlateInputPanel platePanel, JTextField empField) {
-
         final String plateText = platePanel.getPlate().trim();
         final String empText = empField.getText().trim();
         final String dateText = searchDateField.getText().trim();
@@ -146,7 +148,6 @@ public class ReportFrame extends JFrame {
         sorter.setRowFilter(new RowFilter<>() {
             @Override
             public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
-
                 boolean plateMatch = plateText.isEmpty() || entry.getStringValue(4).contains(plateText);
                 boolean empMatch = empText.isEmpty() || entry.getStringValue(0).contains(empText);
                 boolean dateMatch = true;
@@ -159,7 +160,6 @@ public class ReportFrame extends JFrame {
                         LocalDateTime returnDate = (returnStr == null || returnStr.isEmpty() || returnStr.contains("منتظر"))
                                 ? null
                                 : LocalDateTime.parse(returnStr, formatter);
-
                         boolean pickupCondition = pickupDate.isBefore(filterDate);
                         boolean returnCondition = (returnDate == null) || returnDate.isAfter(filterDate);
                         dateMatch = pickupCondition && returnCondition;
@@ -167,7 +167,6 @@ public class ReportFrame extends JFrame {
                         // ignore
                     }
                 }
-
                 return plateMatch && empMatch && dateMatch;
             }
         });
