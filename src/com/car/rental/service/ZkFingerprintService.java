@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +52,9 @@ public class ZkFingerprintService implements FingerprintService {
     private static final int EF_FPFTR = 256;
 
     private static final int ENROLL_TIMEOUT_SECONDS = 60;
+
+    /** Accept decoded device time only if within this many hours of the PC clock. */
+    private static final long MAX_TIME_DRIFT_HOURS = 48;
 
     private static final byte[] PACKET_START = new byte[]{0x50, 0x50, (byte) 0x82, 0x7D};
 
@@ -223,7 +227,8 @@ public class ZkFingerprintService implements FingerprintService {
                             return;
                         }
                         logger.warning("ATTLOG event but could not parse userId; len="
-                                + packet.length);
+                                + packet.length + " dataHex="
+                                + toHex(packet, 16, Math.min(40, packet.length - 16)));
                     } catch (java.net.SocketTimeoutException ste) {
                         // poll until deadline
                     }
@@ -308,6 +313,11 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
+    /**
+     * Realtime ATTLOG payload starts at byte 16 of the full TCP frame.
+     * User ID is ASCII or 16-bit uid; timestamp is ZK 4-byte packed encoding (pyzk decode_time).
+     * Never treat arbitrary bytes as year/month/day — that produced random dates.
+     */
     private VerificationResult parseRealtimeAttLog(byte[] fullPacket) {
         try {
             int dataOffset = 16;
@@ -327,6 +337,10 @@ public class ZkFingerprintService implements FingerprintService {
             }
 
             if (userId == null && fullPacket.length >= dataOffset + 8) {
+                userId = readAsciiId(fullPacket, dataOffset + 2,
+                        Math.min(18, fullPacket.length - dataOffset - 2));
+            }
+            if (userId == null && fullPacket.length >= dataOffset + 10) {
                 userId = readAsciiId(fullPacket, dataOffset + 6,
                         Math.min(18, fullPacket.length - dataOffset - 6));
             }
@@ -335,32 +349,17 @@ public class ZkFingerprintService implements FingerprintService {
                 return null;
             }
 
-            LocalDateTime time = LocalDateTime.now();
-            int verifyType = 1;
-
-            if (fullPacket.length >= dataOffset + 32) {
-                for (int rel : new int[]{26, 27, 24}) {
-                    LocalDateTime t = tryWallTime(fullPacket, dataOffset + rel);
-                    if (t != null) {
-                        time = t;
-                        break;
-                    }
-                }
-                verifyType = fullPacket[dataOffset + 24] & 0xFF;
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime time = extractBestZkTimestamp(fullPacket, dataOffset, now);
+            if (time == null) {
+                logger.warning("No plausible ZK timestamp in ATTLOG; using PC clock. dataHex="
+                        + toHex(fullPacket, dataOffset, Math.min(40, fullPacket.length - dataOffset)));
+                time = now;
             }
 
-            if (time.getYear() == LocalDateTime.now().getYear()
-                    && fullPacket.length >= dataOffset + 8) {
-                for (int rel : new int[]{4, 6, 27, fullPacket.length - dataOffset - 4}) {
-                    if (rel < 0) continue;
-                    if (dataOffset + rel + 4 <= fullPacket.length) {
-                        LocalDateTime t = decodeZkTime(fullPacket, dataOffset + rel);
-                        if (t != null) {
-                            time = t;
-                            break;
-                        }
-                    }
-                }
+            int verifyType = 1;
+            if (fullPacket.length >= dataOffset + 25) {
+                verifyType = fullPacket[dataOffset + 24] & 0xFF;
             }
 
             return new VerificationResult(userId, time, verifyType);
@@ -368,6 +367,56 @@ public class ZkFingerprintService implements FingerprintService {
             logger.log(Level.WARNING, "parseRealtimeAttLog failed", e);
             return null;
         }
+    }
+
+    /**
+     * Prefer known ATTLOG offsets (pyzk / common firmwares), then scan the payload.
+     * Keep only times within {@link #MAX_TIME_DRIFT_HOURS} of {@code now}; pick closest.
+     */
+    private LocalDateTime extractBestZkTimestamp(byte[] buf, int dataOffset, LocalDateTime now) {
+        LocalDateTime best = null;
+        long bestDriftSeconds = Long.MAX_VALUE;
+
+        int[] preferredRel = {27, 29, 30, 24, 25, 26, 4, 6, 8, 12, 16, 20};
+        for (int rel : preferredRel) {
+            LocalDateTime t = tryDecodePlausibleZkTime(buf, dataOffset + rel, now);
+            if (t == null) continue;
+            long drift = Math.abs(Duration.between(now, t).getSeconds());
+            if (drift < bestDriftSeconds) {
+                bestDriftSeconds = drift;
+                best = t;
+            }
+        }
+
+        for (int off = dataOffset; off + 4 <= buf.length; off++) {
+            LocalDateTime t = tryDecodePlausibleZkTime(buf, off, now);
+            if (t == null) continue;
+            long drift = Math.abs(Duration.between(now, t).getSeconds());
+            if (drift < bestDriftSeconds) {
+                bestDriftSeconds = drift;
+                best = t;
+            }
+        }
+
+        if (best != null) {
+            logger.info("ZK time chosen driftSeconds=" + bestDriftSeconds + " value=" + best);
+        }
+        return best;
+    }
+
+    private LocalDateTime tryDecodePlausibleZkTime(byte[] buf, int off, LocalDateTime now) {
+        if (off < 0 || off + 4 > buf.length) {
+            return null;
+        }
+        LocalDateTime t = decodeZkTime(buf, off);
+        if (t == null) {
+            return null;
+        }
+        long hours = Math.abs(Duration.between(now, t).toHours());
+        if (hours > MAX_TIME_DRIFT_HOURS) {
+            return null;
+        }
+        return t;
     }
 
     private String readAsciiId(byte[] buf, int off, int maxLen) {
@@ -399,27 +448,7 @@ public class ZkFingerprintService implements FingerprintService {
                 || b == '_' || b == '-';
     }
 
-    private LocalDateTime tryWallTime(byte[] buf, int off) {
-        if (off + 6 > buf.length) return null;
-        int y = (buf[off] & 0xFF) + 2000;
-        int mo = buf[off + 1] & 0xFF;
-        int d = buf[off + 2] & 0xFF;
-        int h = buf[off + 3] & 0xFF;
-        int mi = buf[off + 4] & 0xFF;
-        int s = buf[off + 5] & 0xFF;
-        if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
-            return null;
-        }
-        if (y < 2000 || y > 2090) {
-            return null;
-        }
-        try {
-            return LocalDateTime.of(y, mo, d, h, mi, s);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
+    /** Standard ZK packed timestamp (same as pyzk decode_time). */
     private LocalDateTime decodeZkTime(byte[] buf, int off) {
         long t = (buf[off] & 0xFFL)
                 | ((buf[off + 1] & 0xFFL) << 8)
@@ -450,8 +479,12 @@ public class ZkFingerprintService implements FingerprintService {
     }
 
     private static String toHex(byte[] buf, int off, int len) {
-        StringBuilder sb = new StringBuilder(len * 3);
-        for (int i = 0; i < len; i++) {
+        if (len <= 0 || off < 0 || off >= buf.length) {
+            return "";
+        }
+        int n = Math.min(len, buf.length - off);
+        StringBuilder sb = new StringBuilder(n * 3);
+        for (int i = 0; i < n; i++) {
             if (i > 0) sb.append(' ');
             sb.append(String.format("%02X", buf[off + i] & 0xFF));
         }
@@ -564,7 +597,6 @@ public class ZkFingerprintService implements FingerprintService {
                 throw new FingerprintException("STARTENROLL failed: " + e.getMessage(), e);
             }
             waitForEnrollDeviceEvent(ENROLL_TIMEOUT_SECONDS);
-            // Device often still has residual events / is already in work mode after enroll.
             enableDeviceBestEffort("after enroll");
         } catch (FingerprintException e) {
             if (userCreated) {
@@ -701,11 +733,6 @@ public class ZkFingerprintService implements FingerprintService {
         requireAck(sendCommand(CMD_ENABLEDEVICE, new byte[0]), "ENABLEDEVICE");
     }
 
-    /**
-     * After enroll the device often still streams residual REG_EVENT packets, so a strict
-     * ENABLEDEVICE ACK can fail even though the terminal is already usable.
-     * Drain the socket, retry once, and never fail the caller for this step.
-     */
     private void enableDeviceBestEffort(String context) {
         try {
             drainPendingPackets(300);
@@ -713,7 +740,6 @@ public class ZkFingerprintService implements FingerprintService {
             if (reply != null && getCommand(reply) == CMD_ACK_OK) {
                 return;
             }
-            // Residual event may have been read as "reply" — drain and retry once
             Thread.sleep(200);
             drainPendingPackets(300);
             reply = sendCommand(CMD_ENABLEDEVICE, new byte[0]);
@@ -728,7 +754,6 @@ public class ZkFingerprintService implements FingerprintService {
         }
     }
 
-    /** Read and discard any packets available within roughly {@code budgetMs}. */
     private void drainPendingPackets(int budgetMs) {
         if (socket == null || in == null) {
             return;
@@ -746,7 +771,6 @@ public class ZkFingerprintService implements FingerprintService {
                             break;
                         }
                         drained++;
-                        // ACK residual realtime events so device stays happy
                         if (getCommand(p) == CMD_REG_EVENT) {
                             sendAck();
                         }
