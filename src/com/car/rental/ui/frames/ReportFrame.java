@@ -215,11 +215,7 @@ public class ReportFrame extends JFrame {
 
     private void clearFilters() {
         employeeNameField.setText("");
-        try {
-            plateSearchPanel.setPlate("");
-        } catch (Exception ignored) {
-            // PlateInputPanel may not accept empty; ignore
-        }
+        plateSearchPanel.clear();
         carNameField.setText("");
         destinationField.setText("");
         dateFromField.setValue(null);
