@@ -3,6 +3,7 @@ package com.car.rental.service;
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.model.RentalReportFilter;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
@@ -47,6 +48,10 @@ public class RentalService {
 
     public List<RentalRecord> getRentalReport() throws SQLException {
         return db.getRentalReport();
+    }
+
+    public List<RentalRecord> getRentalReport(RentalReportFilter filter) throws SQLException {
+        return db.getRentalReport(filter);
     }
 
     public Employee findEmployeeByDeviceUserId(String deviceUserId) throws SQLException {

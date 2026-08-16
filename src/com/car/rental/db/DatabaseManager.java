@@ -4,6 +4,7 @@ import com.car.rental.config.SpringContext;
 import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
+import com.car.rental.model.RentalReportFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
@@ -210,10 +211,6 @@ public class DatabaseManager {
         );
     }
 
-    /**
-     * Resolves the active (non-deleted) car by plate.
-     * Soft-deleted rows with the same plate must not be used for rental updates.
-     */
     public int getCarIdByPlate(String plate) throws SQLException {
         String sql = "SELECT id FROM CarTable WHERE plate = ? AND is_deleted = 0";
         try (Connection conn = getConnection();
@@ -314,7 +311,6 @@ public class DatabaseManager {
     }
 
     public void deleteCar(String plate) throws SQLException {
-        // Refuse soft-delete while on mission (DB-level guard; UI also checks)
         String checkSql = "SELECT is_rented FROM CarTable WHERE plate = ? AND is_deleted = 0";
         String sql = "UPDATE CarTable SET is_deleted = 1 WHERE plate = ? AND is_deleted = 0 AND is_rented = 0";
         try (Connection conn = getConnection()) {
@@ -495,33 +491,100 @@ public class DatabaseManager {
     }
 
     public List<RentalRecord> getRentalReport() throws SQLException {
+        return getRentalReport(new RentalReportFilter());
+    }
+
+    /**
+     * Filtered report. Jalali date strings use lexical compare on {@code yyyy/MM/dd HH:mm:ss}.
+     * Date overlap (who had the car during [from,to]):
+     * {@code pickup <= rangeEnd AND (return IS NULL OR return >= rangeStart)}.
+     */
+    public List<RentalRecord> getRentalReport(RentalReportFilter filter) throws SQLException {
+        if (filter == null) {
+            filter = new RentalReportFilter();
+        }
+
+        StringBuilder sql = new StringBuilder(
+                "SELECT e.device_user_id, e.name AS employee_name, " +
+                        "c.name AS car_name, c.color AS car_color, c.plate, " +
+                        "r.pickup_date, r.return_date, r.destination " +
+                        "FROM RentalTable r " +
+                        "JOIN EmployeeTable e ON r.employee_id = e.id " +
+                        "LEFT JOIN CarTable c ON r.car_id = c.id " +
+                        "WHERE 1=1"
+        );
+        List<Object> params = new ArrayList<>();
+
+        if (filter.getEmployeeName() != null) {
+            sql.append(" AND e.name LIKE ?");
+            params.add("%" + filter.getEmployeeName() + "%");
+        }
+        if (filter.getPlate() != null) {
+            sql.append(" AND c.plate LIKE ?");
+            params.add("%" + filter.getPlate() + "%");
+        }
+        if (filter.getCarName() != null) {
+            sql.append(" AND c.name LIKE ?");
+            params.add("%" + filter.getCarName() + "%");
+        }
+        if (filter.getDestination() != null) {
+            sql.append(" AND r.destination LIKE ?");
+            params.add("%" + filter.getDestination() + "%");
+        }
+
+        switch (filter.getStatus()) {
+            case OPEN -> sql.append(" AND r.return_date IS NULL");
+            case CLOSED -> sql.append(" AND r.return_date IS NOT NULL");
+            case ALL -> { /* no-op */ }
+        }
+
+        String from = filter.getDateFrom();
+        String to = filter.getDateTo();
+        if (from != null || to != null) {
+            if (from == null) {
+                from = to;
+            }
+            if (to == null) {
+                to = from;
+            }
+            // Inclusive day bounds (Jalali text order matches chronology for yyyy/MM/dd)
+            String rangeStart = from + " 00:00:00";
+            String rangeEnd = to + " 23:59:59";
+            sql.append(" AND r.pickup_date IS NOT NULL");
+            sql.append(" AND r.pickup_date <= ?");
+            params.add(rangeEnd);
+            sql.append(" AND (r.return_date IS NULL OR r.return_date >= ?)");
+            params.add(rangeStart);
+        }
+
+        sql.append(" ORDER BY r.pickup_date DESC");
+
         List<RentalRecord> records = new ArrayList<>();
-        String sql = "SELECT e.device_user_id, e.name AS employee_name, " +
-                "c.name AS car_name, c.color AS car_color, c.plate, " +
-                "r.pickup_date, r.return_date, r.destination " +
-                "FROM RentalTable r " +
-                "JOIN EmployeeTable e ON r.employee_id = e.id " +
-                "LEFT JOIN CarTable c ON r.car_id = c.id " +
-                "ORDER BY r.pickup_date";
-
         try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-
-            while (rs.next()) {
-                records.add(new RentalRecord(
-                        rs.getString("device_user_id"),
-                        rs.getString("employee_name"),
-                        rs.getString("car_name"),
-                        rs.getString("car_color"),
-                        rs.getString("plate"),
-                        rs.getString("pickup_date"),
-                        rs.getString("return_date"),
-                        rs.getString("destination")
-                ));
+             PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                stmt.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    records.add(mapRentalRecord(rs));
+                }
             }
         }
         return records;
+    }
+
+    private static RentalRecord mapRentalRecord(ResultSet rs) throws SQLException {
+        return new RentalRecord(
+                rs.getString("device_user_id"),
+                rs.getString("employee_name"),
+                rs.getString("car_name"),
+                rs.getString("car_color"),
+                rs.getString("plate"),
+                rs.getString("pickup_date"),
+                rs.getString("return_date"),
+                rs.getString("destination")
+        );
     }
 
     public RentalRecord getActiveRentalByDeviceUserId(String deviceUserId) throws SQLException {
@@ -537,16 +600,7 @@ public class DatabaseManager {
             ps.setString(1, deviceUserId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return new RentalRecord(
-                            rs.getString("device_user_id"),
-                            rs.getString("employee_name"),
-                            rs.getString("car_name"),
-                            rs.getString("car_color"),
-                            rs.getString("plate"),
-                            rs.getString("pickup_date"),
-                            rs.getString("return_date"),
-                            rs.getString("destination")
-                    );
+                    return mapRentalRecord(rs);
                 }
                 return null;
             }
