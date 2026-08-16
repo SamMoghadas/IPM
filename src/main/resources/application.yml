@@ -8,6 +8,10 @@ spring:
     # Override with env DB_PATH when deploying (e.g. /var/saman/CarRental.db)
     url: jdbc:sqlite:${DB_PATH:CarRental.db}
     driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite is single-writer; keep pool small for consistent reads after commits
+      maximum-pool-size: 1
+      connection-timeout: 30000
   jdbc:
     template:
       query-timeout: 30

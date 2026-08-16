@@ -210,8 +210,12 @@ public class DatabaseManager {
         );
     }
 
+    /**
+     * Resolves the active (non-deleted) car by plate.
+     * Soft-deleted rows with the same plate must not be used for rental updates.
+     */
     public int getCarIdByPlate(String plate) throws SQLException {
-        String sql = "SELECT id FROM CarTable WHERE plate = ?";
+        String sql = "SELECT id FROM CarTable WHERE plate = ? AND is_deleted = 0";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, plate);
@@ -219,7 +223,7 @@ public class DatabaseManager {
                 if (rs.next()) {
                     return rs.getInt("id");
                 } else {
-                    throw new SQLException("Car not found for plate: " + plate);
+                    throw new SQLException("ماشین فعالی با این پلاک یافت نشد: " + plate);
                 }
             }
         }
@@ -294,23 +298,44 @@ public class DatabaseManager {
     }
 
     public void updateCar(Car car, String oldPlate) throws SQLException {
-        String sql = "UPDATE CarTable SET name = ?, color = ?, plate = ? WHERE plate = ?";
+        String sql = "UPDATE CarTable SET name = ?, color = ?, plate = ? " +
+                "WHERE plate = ? AND is_deleted = 0";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, car.getModel());
             stmt.setString(2, car.getColor());
             stmt.setString(3, car.getPlate());
             stmt.setString(4, oldPlate);
-            stmt.executeUpdate();
+            int n = stmt.executeUpdate();
+            if (n == 0) {
+                throw new SQLException("ماشین فعالی برای به‌روزرسانی یافت نشد");
+            }
         }
     }
 
     public void deleteCar(String plate) throws SQLException {
-        String sql = "UPDATE CarTable SET is_deleted = 1 WHERE plate = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, plate);
-            stmt.executeUpdate();
+        // Refuse soft-delete while on mission (DB-level guard; UI also checks)
+        String checkSql = "SELECT is_rented FROM CarTable WHERE plate = ? AND is_deleted = 0";
+        String sql = "UPDATE CarTable SET is_deleted = 1 WHERE plate = ? AND is_deleted = 0 AND is_rented = 0";
+        try (Connection conn = getConnection()) {
+            try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+                check.setString(1, plate);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new SQLException("ماشین فعالی یافت نشد");
+                    }
+                    if (rs.getInt("is_rented") == 1) {
+                        throw new SQLException("ماشین در مأموریت است و قابل حذف نیست");
+                    }
+                }
+            }
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, plate);
+                int n = stmt.executeUpdate();
+                if (n == 0) {
+                    throw new SQLException("حذف ماشین انجام نشد");
+                }
+            }
         }
     }
 
@@ -319,56 +344,89 @@ public class DatabaseManager {
                              String pickupTime,
                              String destination) throws SQLException {
 
-        Employee emp = findByDeviceUserId(deviceUserId);
-        if (emp == null) {
-            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
-        }
-        if (emp.isRenting()) {
-            throw new SQLException("این کارمند در حال حاضر در مأموریت است");
-        }
-
-        int carId = getCarIdByPlate(carPlate);
-
+        String empSql = "SELECT id, is_renting FROM EmployeeTable " +
+                "WHERE device_user_id = ? AND is_active = 1";
+        String carSql = "SELECT id, is_rented FROM CarTable " +
+                "WHERE plate = ? AND is_deleted = 0";
         String insertSql = "INSERT INTO RentalTable(employee_id, car_id, pickup_date, destination) " +
                 "VALUES (?, ?, ?, ?)";
-        String updateCarSql = "UPDATE CarTable SET is_rented = 1 WHERE id = ?";
+        String updateCarSql = "UPDATE CarTable SET is_rented = 1 WHERE id = ? AND is_rented = 0 AND is_deleted = 0";
         String updateEmpSql = "UPDATE EmployeeTable SET is_renting = 1, " +
-                "updated_at = datetime('now','localtime') WHERE id = ?";
+                "updated_at = datetime('now','localtime') WHERE id = ? AND is_renting = 0";
 
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
-            try (PreparedStatement insertStmt = conn.prepareStatement(insertSql);
-                 PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
-                 PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
+            try {
+                int empId;
+                try (PreparedStatement empStmt = conn.prepareStatement(empSql)) {
+                    empStmt.setString(1, deviceUserId);
+                    try (ResultSet rs = empStmt.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
+                        }
+                        if (rs.getInt("is_renting") == 1) {
+                            throw new SQLException("این کارمند در حال حاضر در مأموریت است");
+                        }
+                        empId = rs.getInt("id");
+                    }
+                }
 
-                insertStmt.setInt(1, emp.getId());
-                insertStmt.setInt(2, carId);
-                insertStmt.setString(3, pickupTime);
-                insertStmt.setString(4, destination);
-                insertStmt.executeUpdate();
+                int carId;
+                try (PreparedStatement carStmt = conn.prepareStatement(carSql)) {
+                    carStmt.setString(1, carPlate);
+                    try (ResultSet rs = carStmt.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new SQLException("ماشین فعالی با این پلاک یافت نشد: " + carPlate);
+                        }
+                        if (rs.getInt("is_rented") == 1) {
+                            throw new SQLException("این ماشین هم‌اکنون در مأموریت است");
+                        }
+                        carId = rs.getInt("id");
+                    }
+                }
 
-                updateCarStmt.setInt(1, carId);
-                updateCarStmt.executeUpdate();
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertSql);
+                     PreparedStatement updateCarStmt = conn.prepareStatement(updateCarSql);
+                     PreparedStatement updateEmpStmt = conn.prepareStatement(updateEmpSql)) {
 
-                updateEmpStmt.setInt(1, emp.getId());
-                updateEmpStmt.executeUpdate();
+                    insertStmt.setInt(1, empId);
+                    insertStmt.setInt(2, carId);
+                    insertStmt.setString(3, pickupTime);
+                    insertStmt.setString(4, destination);
+                    insertStmt.executeUpdate();
+
+                    updateCarStmt.setInt(1, carId);
+                    int carUpdated = updateCarStmt.executeUpdate();
+                    if (carUpdated != 1) {
+                        throw new SQLException("به‌روزرسانی وضعیت ماشین انجام نشد");
+                    }
+
+                    updateEmpStmt.setInt(1, empId);
+                    int empUpdated = updateEmpStmt.executeUpdate();
+                    if (empUpdated != 1) {
+                        throw new SQLException("به‌روزرسانی وضعیت کارمند انجام نشد");
+                    }
+                }
 
                 conn.commit();
+                logger.info("Rental inserted: empId=" + empId + " carId=" + carId + " plate=" + carPlate);
             } catch (SQLException e) {
-                conn.rollback();
+                try {
+                    conn.rollback();
+                } catch (SQLException ignored) {
+                }
                 throw e;
             } finally {
-                conn.setAutoCommit(true);
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException ignored) {
+                }
             }
         }
     }
 
     public boolean returnCarByDeviceUserId(String deviceUserId, String returnDate) throws SQLException {
-        Employee emp = findByDeviceUserId(deviceUserId);
-        if (emp == null) {
-            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
-        }
-
+        String empSql = "SELECT id FROM EmployeeTable WHERE device_user_id = ? AND is_active = 1";
         String selectSql = "SELECT id, car_id FROM RentalTable " +
                 "WHERE employee_id = ? AND return_date IS NULL AND is_active = 1";
         String updateRentalSql = "UPDATE RentalTable SET return_date = ?, is_active = 0 WHERE id = ?";
@@ -379,11 +437,21 @@ public class DatabaseManager {
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
             try {
+                int empId;
+                try (PreparedStatement empStmt = conn.prepareStatement(empSql)) {
+                    empStmt.setString(1, deviceUserId);
+                    try (ResultSet rs = empStmt.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new SQLException("کارمند با شناسه دستگاه یافت نشد: " + deviceUserId);
+                        }
+                        empId = rs.getInt("id");
+                    }
+                }
+
                 int rentalId;
                 int carId;
-
                 try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
-                    selectStmt.setInt(1, emp.getId());
+                    selectStmt.setInt(1, empId);
                     try (ResultSet rs = selectStmt.executeQuery()) {
                         if (!rs.next()) {
                             conn.rollback();
@@ -405,7 +473,7 @@ public class DatabaseManager {
                     updateCarStmt.setInt(1, carId);
                     updateCarStmt.executeUpdate();
 
-                    updateEmpStmt.setInt(1, emp.getId());
+                    updateEmpStmt.setInt(1, empId);
                     updateEmpStmt.executeUpdate();
 
                     conn.commit();

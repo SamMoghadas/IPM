@@ -76,7 +76,11 @@ public class AddFrame extends JFrame {
             String color = colorField.getText().strip();
             try {
                 carService.addCar(name, plate, color);
-                JOptionPane.showMessageDialog(this, "ماشین با موفقیت اضافه شد!");
+                JOptionPane.showMessageDialog(this,
+                        "ماشین ثبت شد ✅\n" +
+                                "نام: " + name + "\n" +
+                                "رنگ: " + color + "\n" +
+                                "پلاک: " + plate);
                 modelField.setText("");
                 plateInputPanel.clear();
                 colorField.setText("");
