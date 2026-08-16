@@ -10,12 +10,12 @@ import com.car.rental.service.FingerprintException;
 import com.car.rental.service.FingerprintService;
 import com.car.rental.service.RentalService;
 import com.car.rental.service.VerificationResult;
+import com.car.rental.util.JalaliDate;
 
 import javax.swing.*;
 import java.awt.*;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.logging.Logger;
 
 public class MainFrame extends JFrame {
@@ -471,7 +471,6 @@ public class MainFrame extends JFrame {
         returnConfirmButton.setEnabled(false);
     }
 
-    /** Short-lived sessions: free device for multi-user / next operation. */
     private void releaseDevice() {
         try {
             fingerprintService.cancelListen();
@@ -492,9 +491,9 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /** Device instant formatted as Jalali calendar for storage and UI. */
     private static String formatDeviceTime(LocalDateTime time) {
-        if (time == null) return "";
-        return time.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        return JalaliDate.formatDateTime(time);
     }
 
     private static JLabel label(String text) {

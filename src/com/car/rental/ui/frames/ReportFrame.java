@@ -14,6 +14,7 @@ import java.awt.*;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -22,6 +23,13 @@ public class ReportFrame extends JFrame {
     private static final String[] COLUMNS = {
             "شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"
     };
+
+    /** Jalali timestamps stored as yyyy/MM/dd HH:mm[:ss] */
+    private static final DateTimeFormatter JALALI_DT =
+            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm[:ss]");
+    /** Legacy Gregorian rows may still use dashes. */
+    private static final DateTimeFormatter LEGACY_DT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]");
 
     private final DefaultTableModel tableModel;
     private final TableRowSorter<DefaultTableModel> sorter;
@@ -81,14 +89,16 @@ public class ReportFrame extends JFrame {
         searchEmployeeField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
 
         try {
+            // Jalali: 1403/05/25 14:30
             MaskFormatter mask = new MaskFormatter("####/##/## ##:##");
             mask.setPlaceholderCharacter('_');
             searchDateField = new JFormattedTextField(mask);
-            searchDateField.setColumns(10);
+            searchDateField.setColumns(12);
+            searchDateField.setToolTipText("تاریخ شمسی، مثلاً 1403/05/25 14:30");
         } catch (Exception ex) {
             logger.severe("خطا در ساخت ماسک تاریخ");
             searchDateField = new JFormattedTextField();
-            searchDateField.setColumns(10);
+            searchDateField.setColumns(12);
         }
 
         JButton searchButton = new JButton("جستجو");
@@ -100,7 +110,7 @@ public class ReportFrame extends JFrame {
         searchPanel.add(plateSearchPanel);
         searchPanel.add(new JLabel("شناسه کاربر:"));
         searchPanel.add(searchEmployeeField);
-        searchPanel.add(new JLabel("تاریخ:"));
+        searchPanel.add(new JLabel("تاریخ (شمسی):"));
         searchPanel.add(searchDateField);
         searchPanel.add(searchButton);
 
@@ -137,7 +147,6 @@ public class ReportFrame extends JFrame {
         final String plateText = platePanel.getPlate().trim();
         final String empText = empField.getText().trim();
         final String dateText = searchDateField.getText().trim();
-        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
         sorter.setRowFilter(new RowFilter<>() {
             @Override
@@ -148,21 +157,37 @@ public class ReportFrame extends JFrame {
 
                 if (!dateText.contains("_")) {
                     try {
-                        LocalDateTime filterDate = LocalDateTime.parse(dateText, formatter);
-                        LocalDateTime pickupDate = LocalDateTime.parse(entry.getStringValue(5), formatter);
+                        LocalDateTime filterDate = parseFlexible(dateText);
+                        LocalDateTime pickupDate = parseFlexible(entry.getStringValue(5));
                         String returnStr = entry.getStringValue(6);
                         LocalDateTime returnDate = (returnStr == null || returnStr.isEmpty() || returnStr.contains("منتظر"))
                                 ? null
-                                : LocalDateTime.parse(returnStr, formatter);
-                        boolean pickupCondition = pickupDate.isBefore(filterDate);
-                        boolean returnCondition = (returnDate == null) || returnDate.isAfter(filterDate);
+                                : parseFlexible(returnStr);
+                        boolean pickupCondition = !pickupDate.isAfter(filterDate);
+                        boolean returnCondition = (returnDate == null) || !returnDate.isBefore(filterDate);
                         dateMatch = pickupCondition && returnCondition;
                     } catch (Exception ex) {
-                        // ignore parse errors for incomplete filter input
+                        // incomplete / mixed legacy rows
                     }
                 }
                 return plateMatch && empMatch && dateMatch;
             }
         });
+    }
+
+    /**
+     * Accepts Jalali {@code yyyy/MM/dd HH:mm[:ss]} and legacy Gregorian dash form.
+     * Component values are compared as-is (same calendar system within one dataset).
+     */
+    private static LocalDateTime parseFlexible(String raw) {
+        if (raw == null) {
+            throw new DateTimeParseException("null", "", 0);
+        }
+        String s = raw.trim();
+        try {
+            return LocalDateTime.parse(s, JALALI_DT);
+        } catch (DateTimeParseException ignored) {
+        }
+        return LocalDateTime.parse(s, LEGACY_DT);
     }
 }
