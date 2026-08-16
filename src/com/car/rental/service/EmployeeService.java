@@ -2,7 +2,6 @@ package com.car.rental.service;
 
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Employee;
-import com.car.rental.util.DataChangeCallback;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
@@ -39,16 +38,8 @@ public class EmployeeService {
         return db.findByDeviceUserId(deviceUserId);
     }
 
-    public Employee findById(int id) throws SQLException {
-        return db.findEmployeeById(id);
-    }
-
     public List<Employee> getAllEmployees() throws SQLException {
         return db.getAllEmployees();
-    }
-
-    public List<Employee> getAvailableEmployees() throws SQLException {
-        return db.getAvailableEmployees();
     }
 
     /**
@@ -104,7 +95,7 @@ public class EmployeeService {
     }
 
     /** Soft-delete in DB and best-effort remove from device. */
-    public void deleteEmployee(String deviceUserId, DataChangeCallback callback) throws SQLException {
+    public void deleteEmployee(String deviceUserId) throws SQLException {
         try {
             ensureConnected();
             fingerprintService.deleteUser(deviceUserId);
@@ -113,7 +104,7 @@ public class EmployeeService {
         } finally {
             disconnectQuietly();
         }
-        db.deleteEmployeeByDeviceUserId(deviceUserId, callback);
+        db.deleteEmployeeByDeviceUserId(deviceUserId);
     }
 
     private void ensureConnected() throws FingerprintException {

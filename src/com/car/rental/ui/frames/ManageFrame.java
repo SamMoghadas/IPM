@@ -235,7 +235,8 @@ public class ManageFrame extends JFrame {
             if (confirmed) {
                 try {
                     String plate = carModel.getValueAt(modelRow, 2).toString();
-                    carService.deleteCar(plate, this::loadDataFromDB);
+                    carService.deleteCar(plate);
+                    loadDataFromDB();
                     JOptionPane.showMessageDialog(this, "ماشین حذف شد!");
                 } catch (SQLException e) {
                     JOptionPane.showMessageDialog(this, "خطا در حذف ماشین: " + e.getMessage());
@@ -258,7 +259,8 @@ public class ManageFrame extends JFrame {
             if (confirmed) {
                 try {
                     String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
-                    employeeService.deleteEmployee(deviceUserId, this::loadDataFromDB);
+                    employeeService.deleteEmployee(deviceUserId);
+                    loadDataFromDB();
                     JOptionPane.showMessageDialog(this, "کارمند حذف شد!");
                 } catch (SQLException e) {
                     JOptionPane.showMessageDialog(this, "خطا در حذف کارمند: " + e.getMessage());

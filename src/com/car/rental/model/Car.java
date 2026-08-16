@@ -49,4 +49,13 @@ public class Car {
     public void setStatus(String status) {
         this.status = status;
     }
+
+    /** Display text for combo boxes and lists (not used for parsing). */
+    @Override
+    public String toString() {
+        String m = model != null ? model : "";
+        String c = color != null ? color : "";
+        String p = plate != null ? plate : "";
+        return m + " - " + c + " - " + p;
+    }
 }

@@ -6,7 +6,9 @@ import com.car.rental.service.RentalService;
 import com.car.rental.ui.components.PlateInputPanel;
 
 import javax.swing.*;
-import javax.swing.table.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import javax.swing.text.MaskFormatter;
 import java.awt.*;
 import java.sql.SQLException;
@@ -17,7 +19,12 @@ import java.util.logging.Logger;
 
 public class ReportFrame extends JFrame {
 
-    private TableRowSorter<DefaultTableModel> sorter;
+    private static final String[] COLUMNS = {
+            "شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"
+    };
+
+    private final DefaultTableModel tableModel;
+    private final TableRowSorter<DefaultTableModel> sorter;
     private JFormattedTextField searchDateField;
     private static final Logger logger = Logger.getLogger(ReportFrame.class.getName());
 
@@ -28,6 +35,29 @@ public class ReportFrame extends JFrame {
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getContentPane().setBackground(Color.WHITE);
+
+        tableModel = new DefaultTableModel(COLUMNS, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        JTable table = new JTable(tableModel);
+        table.setRowHeight(24);
+        table.setFont(new Font("Arial", Font.PLAIN, 12));
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(center);
+        }
+
+        sorter = new TableRowSorter<>(tableModel);
+        table.setRowSorter(sorter);
+
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.getViewport().setBackground(Color.WHITE);
+        add(scrollPane, BorderLayout.CENTER);
 
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setBackground(Color.WHITE);
@@ -57,6 +87,8 @@ public class ReportFrame extends JFrame {
             searchDateField.setColumns(10);
         } catch (Exception ex) {
             logger.severe("خطا در ساخت ماسک تاریخ");
+            searchDateField = new JFormattedTextField();
+            searchDateField.setColumns(10);
         }
 
         JButton searchButton = new JButton("جستجو");
@@ -75,54 +107,27 @@ public class ReportFrame extends JFrame {
         topPanel.add(searchPanel, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
 
-        loadTable();
+        reloadTableData();
         setVisible(true);
     }
 
-    private void loadTable() {
+    private void reloadTableData() {
+        tableModel.setRowCount(0);
         RentalService rentalService = ServiceLookup.get(RentalService.class);
         try {
             List<RentalRecord> rentalRecords = rentalService.getRentalReport();
-
-            String[] columns = {"شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"};
-            Object[][] data = new Object[rentalRecords.size()][columns.length];
-
-            for (int i = 0; i < rentalRecords.size(); i++) {
-                RentalRecord r = rentalRecords.get(i);
-                data[i][0] = r.deviceUserId;
-                data[i][1] = r.employeeName;
-                data[i][2] = r.carName;
-                data[i][3] = r.carColor;
-                data[i][4] = r.plate;
-                data[i][5] = r.pickupDate;
-                data[i][6] = r.returnDate;
-                data[i][7] = r.destination;
+            for (RentalRecord r : rentalRecords) {
+                tableModel.addRow(new Object[]{
+                        r.deviceUserId,
+                        r.employeeName,
+                        r.carName,
+                        r.carColor,
+                        r.plate,
+                        r.pickupDate,
+                        r.returnDate,
+                        r.destination
+                });
             }
-
-            DefaultTableModel model = new DefaultTableModel(data, columns) {
-                @Override
-                public boolean isCellEditable(int row, int column) {
-                    return false;
-                }
-            };
-
-            JTable table = new JTable(model);
-            table.setRowHeight(24);
-            table.setFont(new Font("Arial", Font.PLAIN, 12));
-
-            DefaultTableCellRenderer center = new DefaultTableCellRenderer();
-            center.setHorizontalAlignment(SwingConstants.CENTER);
-            for (int i = 0; i < table.getColumnCount(); i++) {
-                table.getColumnModel().getColumn(i).setCellRenderer(center);
-            }
-
-            sorter = new TableRowSorter<>(model);
-            table.setRowSorter(sorter);
-
-            JScrollPane scrollPane = new JScrollPane(table);
-            scrollPane.getViewport().setBackground(Color.WHITE);
-            add(scrollPane, BorderLayout.CENTER);
-
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "خطا در دریافت گزارش: " + e.getMessage());
         }
@@ -153,7 +158,7 @@ public class ReportFrame extends JFrame {
                         boolean returnCondition = (returnDate == null) || returnDate.isAfter(filterDate);
                         dateMatch = pickupCondition && returnCondition;
                     } catch (Exception ex) {
-                        // ignore
+                        // ignore parse errors for incomplete filter input
                     }
                 }
                 return plateMatch && empMatch && dateMatch;

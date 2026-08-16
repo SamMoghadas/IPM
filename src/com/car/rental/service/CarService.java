@@ -2,7 +2,6 @@ package com.car.rental.service;
 
 import com.car.rental.db.DatabaseManager;
 import com.car.rental.model.Car;
-import com.car.rental.util.DataChangeCallback;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
@@ -54,8 +53,8 @@ public class CarService {
         db.updateCar(car, oldPlate);
     }
 
-    public void deleteCar(String plate, DataChangeCallback callback) throws SQLException {
-        db.deleteCar(plate, callback);
+    public void deleteCar(String plate) throws SQLException {
+        db.deleteCar(plate);
     }
 
     public List<Car> getAvailableCars() throws SQLException {
@@ -64,13 +63,5 @@ public class CarService {
 
     public List<Car> getAllCars() throws SQLException {
         return db.listAllCars();
-    }
-
-    public int getCarIdByPlate(String plate) throws SQLException {
-        return db.getCarIdByPlate(plate);
-    }
-
-    public boolean isPlateTaken(String plate, String excludePlate) throws SQLException {
-        return db.isPlateTaken(plate, excludePlate);
     }
 }

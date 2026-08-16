@@ -4,7 +4,6 @@ import com.car.rental.config.SpringContext;
 import com.car.rental.model.Car;
 import com.car.rental.model.Employee;
 import com.car.rental.model.RentalRecord;
-import com.car.rental.util.DataChangeCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
@@ -153,35 +152,6 @@ public class DatabaseManager {
         }
     }
 
-    public Employee findEmployeeById(int id) throws SQLException {
-        String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
-                "FROM EmployeeTable WHERE id = ? AND is_active = 1";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, id);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return mapEmployee(rs);
-                }
-                return null;
-            }
-        }
-    }
-
-    public List<Employee> getAvailableEmployees() throws SQLException {
-        List<Employee> list = new ArrayList<>();
-        String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
-                "FROM EmployeeTable WHERE is_active = 1 AND is_renting = 0 ORDER BY name";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                list.add(mapEmployee(rs));
-            }
-        }
-        return list;
-    }
-
     public List<Employee> getAllEmployees() throws SQLException {
         List<Employee> list = new ArrayList<>();
         String sql = "SELECT id, device_user_id, name, phone, is_active, is_renting " +
@@ -208,50 +178,12 @@ public class DatabaseManager {
         }
     }
 
-    public void deleteEmployee(int id, DataChangeCallback callback) throws SQLException {
-        String sql = "UPDATE EmployeeTable SET is_active = 0, " +
-                "updated_at = datetime('now','localtime') WHERE id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, id);
-            stmt.executeUpdate();
-            if (callback != null) {
-                callback.onDataChange();
-            }
-        }
-    }
-
-    public void deleteEmployeeByDeviceUserId(String deviceUserId, DataChangeCallback callback) throws SQLException {
+    public void deleteEmployeeByDeviceUserId(String deviceUserId) throws SQLException {
         String sql = "UPDATE EmployeeTable SET is_active = 0, " +
                 "updated_at = datetime('now','localtime') WHERE device_user_id = ?";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, deviceUserId);
-            stmt.executeUpdate();
-            if (callback != null) {
-                callback.onDataChange();
-            }
-        }
-    }
-
-    public void setRentingStatus(int employeeId, boolean renting) throws SQLException {
-        String sql = "UPDATE EmployeeTable SET is_renting = ?, " +
-                "updated_at = datetime('now','localtime') WHERE id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, renting ? 1 : 0);
-            stmt.setInt(2, employeeId);
-            stmt.executeUpdate();
-        }
-    }
-
-    public void setRentingStatusByDeviceUserId(String deviceUserId, boolean renting) throws SQLException {
-        String sql = "UPDATE EmployeeTable SET is_renting = ?, " +
-                "updated_at = datetime('now','localtime') WHERE device_user_id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, renting ? 1 : 0);
-            stmt.setString(2, deviceUserId);
             stmt.executeUpdate();
         }
     }
@@ -373,15 +305,12 @@ public class DatabaseManager {
         }
     }
 
-    public void deleteCar(String plate, DataChangeCallback callback) throws SQLException {
+    public void deleteCar(String plate) throws SQLException {
         String sql = "UPDATE CarTable SET is_deleted = 1 WHERE plate = ?";
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, plate);
             stmt.executeUpdate();
-            if (callback != null) {
-                callback.onDataChange();
-            }
         }
     }
 

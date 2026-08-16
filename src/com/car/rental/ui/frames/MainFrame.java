@@ -16,7 +16,6 @@ import java.awt.*;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Objects;
 import java.util.logging.Logger;
 
 public class MainFrame extends JFrame {
@@ -28,7 +27,7 @@ public class MainFrame extends JFrame {
     private final FingerprintService fingerprintService;
     private final int fpTimeoutSeconds;
 
-    private JComboBox<String> carCombo;
+    private JComboBox<Car> carCombo;
     private JTextField destinationField;
     private JLabel pickupStatusLabel;
     private JButton pickupAuthButton;
@@ -309,7 +308,8 @@ public class MainFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "ابتدا احراز هویت را انجام دهید!");
             return;
         }
-        if (carCombo.getSelectedItem() == null) {
+        Car selected = (Car) carCombo.getSelectedItem();
+        if (selected == null) {
             JOptionPane.showMessageDialog(this, "ماشین را انتخاب کنید!");
             return;
         }
@@ -320,8 +320,7 @@ public class MainFrame extends JFrame {
         }
 
         try {
-            String[] selectedCar = Objects.requireNonNull(carCombo.getSelectedItem()).toString().split(" - ");
-            String carPlate = selectedCar[selectedCar.length - 1];
+            String carPlate = selected.getPlate();
             String pickupTime = formatDeviceTime(pickupDeviceTime);
 
             rentalService.pickup(pickupDeviceUserId, carPlate, pickupTime, dest);
@@ -347,7 +346,6 @@ public class MainFrame extends JFrame {
         if (listening) {
             pickupConfirmButton.setEnabled(false);
         } else {
-            // Short-lived device session ends when auth finishes/cancels/times out
             releaseDevice();
         }
         carCombo.setEnabled(!listening);
@@ -486,7 +484,7 @@ public class MainFrame extends JFrame {
         carCombo.removeAllItems();
         try {
             for (Car car : carService.getAvailableCars()) {
-                carCombo.addItem(car.getModel() + " - " + car.getColor() + " - " + car.getPlate());
+                carCombo.addItem(car);
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
