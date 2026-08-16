@@ -23,7 +23,6 @@
     </properties>
 
     <dependencies>
-        <!-- Spring core + JDBC (no web yet; can add spring-boot-starter-web later) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
@@ -39,7 +38,13 @@
             <version>3.46.1.3</version>
         </dependency>
 
-        <!-- Optional: enable actuator later if needed -->
+        <!-- Excel (.xlsx) export for reports -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -48,7 +53,6 @@
     </dependencies>
 
     <build>
-        <!-- Keep existing source layout during migration (src/com/... instead of src/main/java) -->
         <sourceDirectory>src</sourceDirectory>
         <resources>
             <resource>
