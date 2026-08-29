@@ -6,6 +6,7 @@ import com.car.rental.model.Employee;
 import com.car.rental.service.CarService;
 import com.car.rental.service.EmployeeService;
 import com.car.rental.ui.components.PlateInputPanel;
+import com.car.rental.util.InputValidators;
 
 import javax.swing.*;
 import java.awt.*;
@@ -114,12 +115,12 @@ public class EditFrame extends JFrame {
         deviceUserIdField.setEditable(false);
         deviceUserIdField.setBackground(new Color(240, 240, 240));
         deviceUserIdField.setForeground(Color.GRAY);
-        deviceUserIdField.setToolTipText("شناسه دستگاه ثابت است و قابل تغییر نیست");
+        deviceUserIdField.setToolTipText("شناسه کارمند ثابت است و قابل تغییر نیست");
 
         nameField = new JTextField();
         nameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
         nameField.setHorizontalAlignment(JTextField.LEFT);
-        nameField.setToolTipText("نام را انگلیسی وارد کنید (دستگاه از فارسی پشتیبانی نمی‌کند)");
+        nameField.setToolTipText("نام کامل را انگلیسی وارد کنید (دستگاه از فارسی پشتیبانی نمی‌کند)");
 
         phoneField = new JTextField();
         phoneField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
@@ -133,7 +134,7 @@ public class EditFrame extends JFrame {
         addFingerButton.setBackground(new Color(180, 100, 0));
         addFingerButton.setForeground(Color.WHITE);
 
-        employeeStatusLabel = new JLabel("انگشت موردنظر را انتخاب و «افزودن اثر انگشت» را بزنید");
+        employeeStatusLabel = new JLabel(" ");
         employeeStatusLabel.setForeground(new Color(80, 80, 80));
 
         saveButton = new JButton("ذخیره تغییرات");
@@ -175,8 +176,8 @@ public class EditFrame extends JFrame {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(8, 10, 8, 10);
         int row = 0;
-        row = addRow(panel, gbc, row, "شناسه دستگاه:", deviceUserIdField);
-        row = addRow(panel, gbc, row, "نام (انگلیسی):", nameField);
+        row = addRow(panel, gbc, row, "شناسه کارمند:", deviceUserIdField);
+        row = addRow(panel, gbc, row, "نام کامل (انگلیسی):", nameField);
         row = addRow(panel, gbc, row, "شماره تماس:", phoneField);
         row = addRow(panel, gbc, row, "انگشت:", fingerCombo);
         gbc.gridx = 0;
@@ -253,6 +254,12 @@ public class EditFrame extends JFrame {
     private void saveEmployeeChanges() {
         String name = nameField.getText().strip();
         String phone = phoneField.getText().strip();
+
+        String nameError = InputValidators.validateEnglishFullName(name);
+        if (nameError != null) {
+            JOptionPane.showMessageDialog(this, nameError);
+            return;
+        }
 
         setEmployeeFormEnabled(false);
         employeeStatusLabel.setForeground(new Color(180, 120, 0));
