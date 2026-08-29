@@ -103,9 +103,19 @@ public class ReportFrame extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         employeeNameField = new JTextField(10);
+        employeeNameField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        employeeNameField.setHorizontalAlignment(JTextField.RIGHT);
+
         plateSearchPanel = new PlateInputPanel();
+
         carNameField = new JTextField(8);
+        carNameField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        carNameField.setHorizontalAlignment(JTextField.RIGHT);
+
         destinationField = new JTextField(8);
+        destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        destinationField.setHorizontalAlignment(JTextField.RIGHT);
+
         dateFromField = jalaliDateField();
         dateToField = jalaliDateField();
         statusCombo = new JComboBox<>(new String[]{"همه", "فقط باز (منتظر برگشت)", "فقط بسته‌شده"});
@@ -167,7 +177,7 @@ public class ReportFrame extends JFrame {
         outer.add(filters, BorderLayout.CENTER);
 
         JLabel tip = new JLabel(
-                "تاریخ شمسی yyyy/MM/dd — برای یک روز خاص همان تاریخ را در «از» و «تا» بگذارید (مثلاً روز جریمه).");
+                "تاریخ شمسی yyyy/MM/dd — برای یک روز خاص همان تاریخ را در «از» و «تا» بگذارید.");
         tip.setFont(new Font("Arial", Font.PLAIN, 11));
         tip.setForeground(new Color(90, 90, 90));
         outer.add(tip, BorderLayout.SOUTH);
@@ -255,9 +265,6 @@ public class ReportFrame extends JFrame {
         }
     }
 
-    /**
-     * Returns {@code yyyy/MM/dd} or null if incomplete mask.
-     */
     private static String normalizeJalaliDay(String raw) {
         if (raw == null) {
             return null;

@@ -12,6 +12,9 @@ import java.sql.SQLException;
 
 public class AddFrame extends JFrame {
 
+    /** Shared primary action color for "create/save" buttons on this form. */
+    private static final Color ACTION_GREEN = new Color(34, 139, 34);
+
     private static final String[] FINGER_LABELS = {
             "0 — انگشت کوچک دست چپ",
             "1 — انگشت حلقه دست چپ",
@@ -28,7 +31,6 @@ public class AddFrame extends JFrame {
     private final CarService carService;
     private final EmployeeService employeeService;
 
-    private JTextField deviceUserIdField;
     private JTextField nameField;
     private JTextField phoneField;
     private JComboBox<String> fingerCombo;
@@ -40,7 +42,7 @@ public class AddFrame extends JFrame {
         this.employeeService = ServiceLookup.get(EmployeeService.class);
 
         setTitle("اضافه کردن ماشین و کارمند");
-        setSize(640, 640);
+        setSize(640, 600);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BoxLayout(getContentPane(), BoxLayout.Y_AXIS));
@@ -62,7 +64,7 @@ public class AddFrame extends JFrame {
         JTextField modelField = createField(true);
         PlateInputPanel plateInputPanel = new PlateInputPanel();
         JTextField colorField = createField(true);
-        JButton addCarButton = createActionButton("اضافه کردن ماشین", new Color(34, 139, 34));
+        JButton addCarButton = createActionButton("اضافه کردن ماشین", ACTION_GREEN);
 
         addFormRow(carFormPanel, "نام ماشین:", modelField);
         addFormRow(carFormPanel, "پلاک ماشین:", plateInputPanel);
@@ -91,15 +93,11 @@ public class AddFrame extends JFrame {
 
         JPanel employeeFormPanel = createTitledPanel("اضافه کردن کارمند");
 
-        deviceUserIdField = createField(false);
-        deviceUserIdField.setEditable(false);
-        deviceUserIdField.setBackground(new Color(240, 240, 240));
-        deviceUserIdField.setToolTipText("شناسه به‌صورت خودکار از ۱۰۰۱ به بعد تولید می‌شود");
-
+        // device_user_id is auto-generated at submit time — not shown on the form
         nameField = createField(false);
         nameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
         nameField.setHorizontalAlignment(JTextField.LEFT);
-        nameField.setToolTipText("نام را انگلیسی وارد کنید (دستگاه از فارسی پشتیبانی نمی‌کند)");
+        nameField.setToolTipText("نام کامل را انگلیسی وارد کنید (دستگاه از فارسی پشتیبانی نمی‌کند)");
 
         phoneField = createField(false);
         phoneField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
@@ -109,12 +107,11 @@ public class AddFrame extends JFrame {
         fingerCombo.setSelectedIndex(6);
         fingerCombo.setPreferredSize(new Dimension(280, 28));
 
-        enrollButton = createActionButton("ثبت اثر انگشت و ذخیره کارمند", new Color(0, 120, 215));
-        employeeStatusLabel = new JLabel("نام را به انگلیسی وارد کنید");
+        enrollButton = createActionButton("ثبت اثر انگشت و ذخیره کارمند", ACTION_GREEN);
+        employeeStatusLabel = new JLabel(" ");
         employeeStatusLabel.setForeground(new Color(80, 80, 80));
 
-        addFormRow(employeeFormPanel, "شناسه دستگاه:", deviceUserIdField);
-        addFormRow(employeeFormPanel, "نام (انگلیسی):", nameField);
+        addFormRow(employeeFormPanel, "نام کامل (انگلیسی):", nameField);
         addFormRow(employeeFormPanel, "شماره تماس:", phoneField);
         addFormRow(employeeFormPanel, "انگشت:", fingerCombo);
 
@@ -128,27 +125,16 @@ public class AddFrame extends JFrame {
 
         enrollButton.addActionListener(e -> registerEmployeeWithFingerprint());
 
-        refreshNextDeviceUserId();
         setVisible(true);
     }
 
-    private void refreshNextDeviceUserId() {
-        try {
-            deviceUserIdField.setText(employeeService.getNextDeviceUserId());
-        } catch (SQLException ex) {
-            deviceUserIdField.setText("");
-            JOptionPane.showMessageDialog(this, "خطا در تولید شناسه: " + ex.getMessage());
-        }
-    }
-
     private void registerEmployeeWithFingerprint() {
-        String deviceUserId = deviceUserIdField.getText().strip();
         String name = nameField.getText().strip();
         String phone = phoneField.getText().strip();
         int fingerIndex = fingerCombo.getSelectedIndex();
 
-        if (deviceUserId.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "شناسه دستگاه خالی است!");
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "نام کامل را وارد کنید!");
             return;
         }
 
@@ -156,13 +142,14 @@ public class AddFrame extends JFrame {
         employeeStatusLabel.setForeground(new Color(180, 120, 0));
         employeeStatusLabel.setText("در حال ثبت روی دستگاه و دیتابیس...");
 
-        new SwingWorker<Void, String>() {
+        new SwingWorker<String, String>() {
             @Override
-            protected Void doInBackground() throws Exception {
+            protected String doInBackground() throws Exception {
                 publish("انگشت را روی سنسور بگذارید...");
+                String deviceUserId = employeeService.getNextDeviceUserId();
                 employeeService.registerWithFingerprint(
                         deviceUserId, name, phone.isEmpty() ? null : phone, fingerIndex);
-                return null;
+                return deviceUserId;
             }
 
             @Override
@@ -175,15 +162,16 @@ public class AddFrame extends JFrame {
             @Override
             protected void done() {
                 try {
-                    get();
+                    String deviceUserId = get();
                     employeeStatusLabel.setForeground(new Color(0, 128, 0));
                     employeeStatusLabel.setText("کارمند روی دستگاه و در سیستم ثبت شد");
                     JOptionPane.showMessageDialog(AddFrame.this,
-                            "کارمند ثبت شد ✅\nشناسه: " + deviceUserId + "\nنام: " + name);
+                            "کارمند ثبت شد ✅\n" +
+                                    "نام: " + name + "\n" +
+                                    "شناسه کارمند: " + deviceUserId);
                     nameField.setText("");
                     phoneField.setText("");
                     fingerCombo.setSelectedIndex(6);
-                    refreshNextDeviceUserId();
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage() != null ? cause.getMessage() : cause.toString();
@@ -193,7 +181,6 @@ public class AddFrame extends JFrame {
                             "ثبت کارمند ناموفق بود:\n" + msg,
                             "خطا",
                             JOptionPane.ERROR_MESSAGE);
-                    refreshNextDeviceUserId();
                 } finally {
                     setEmployeeFormEnabled(true);
                 }
@@ -224,7 +211,7 @@ public class AddFrame extends JFrame {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
         row.setBackground(Color.WHITE);
         JLabel label = new JLabel(labelText, SwingConstants.RIGHT);
-        label.setPreferredSize(new Dimension(140, 25));
+        label.setPreferredSize(new Dimension(160, 25));
         row.add(field);
         row.add(label);
         parent.add(row);
