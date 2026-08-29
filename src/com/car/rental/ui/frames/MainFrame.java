@@ -16,6 +16,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.logging.Logger;
 
 public class MainFrame extends JFrame {
@@ -28,6 +29,7 @@ public class MainFrame extends JFrame {
     private final int fpTimeoutSeconds;
 
     private JComboBox<Car> carCombo;
+    private JLabel noCarHintLabel;
     private JTextField destinationField;
     private JLabel pickupStatusLabel;
     private JButton pickupAuthButton;
@@ -119,8 +121,16 @@ public class MainFrame extends JFrame {
         carCombo = new JComboBox<>();
         carCombo.setFont(new Font("Arial", Font.PLAIN, 14));
         carCombo.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        loadCars();
         panel.add(carCombo, gbc);
+        row++;
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.anchor = GridBagConstraints.CENTER;
+        noCarHintLabel = new JLabel("ماشینی آزاد نیست");
+        noCarHintLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+        noCarHintLabel.setForeground(new Color(160, 80, 0));
+        noCarHintLabel.setVisible(false);
+        panel.add(noCarHintLabel, gbc);
+        gbc.gridwidth = 1;
         row++;
 
         gbc.gridx = 0; gbc.gridy = row; gbc.anchor = GridBagConstraints.EAST;
@@ -159,6 +169,7 @@ public class MainFrame extends JFrame {
         btns.add(pickupConfirmButton);
         panel.add(btns, gbc);
 
+        loadCars();
         return panel;
     }
 
@@ -230,8 +241,8 @@ public class MainFrame extends JFrame {
     }
 
     private void startPickupAuth() {
-        if (carCombo.getSelectedItem() == null) {
-            JOptionPane.showMessageDialog(this, "ابتدا ماشین را انتخاب کنید!");
+        if (carCombo.getItemCount() == 0 || carCombo.getSelectedItem() == null) {
+            JOptionPane.showMessageDialog(this, "ماشینی آزاد نیست!");
             return;
         }
         String dest = destinationField.getText().strip();
@@ -341,14 +352,15 @@ public class MainFrame extends JFrame {
     }
 
     private void setPickupListeningUi(boolean listening) {
-        pickupAuthButton.setEnabled(!listening);
+        boolean hasCars = carCombo.getItemCount() > 0;
+        pickupAuthButton.setEnabled(!listening && hasCars);
         pickupCancelButton.setEnabled(listening);
         if (listening) {
             pickupConfirmButton.setEnabled(false);
         } else {
             releaseDevice();
         }
-        carCombo.setEnabled(!listening);
+        carCombo.setEnabled(!listening && hasCars);
         destinationField.setEnabled(!listening);
     }
 
@@ -482,16 +494,27 @@ public class MainFrame extends JFrame {
     public void loadCars() {
         carCombo.removeAllItems();
         try {
-            for (Car car : carService.getAvailableCars()) {
+            List<Car> cars = carService.getAvailableCars();
+            for (Car car : cars) {
                 carCombo.addItem(car);
+            }
+            boolean empty = cars.isEmpty();
+            noCarHintLabel.setVisible(empty);
+            carCombo.setEnabled(!empty);
+            pickupAuthButton.setEnabled(!empty);
+            if (empty) {
+                pickupStatusLabel.setText(" ");
             }
         } catch (SQLException e) {
             logger.severe("خطا در خواندن ماشین‌ها: " + e.getMessage());
+            noCarHintLabel.setVisible(true);
+            noCarHintLabel.setText("خطا در خواندن لیست ماشین‌ها");
+            carCombo.setEnabled(false);
+            pickupAuthButton.setEnabled(false);
             JOptionPane.showMessageDialog(this, "خطا در خواندن ماشین‌ها: " + e.getMessage());
         }
     }
 
-    /** Device instant formatted as Jalali calendar for storage and UI. */
     private static String formatDeviceTime(LocalDateTime time) {
         return JalaliDate.formatDateTime(time);
     }
