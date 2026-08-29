@@ -4,11 +4,11 @@ import com.car.rental.config.ServiceLookup;
 import com.car.rental.service.CarService;
 import com.car.rental.service.EmployeeService;
 import com.car.rental.ui.components.PlateInputPanel;
+import com.car.rental.util.InputValidators;
 
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
-import java.sql.SQLException;
 
 public class AddFrame extends JFrame {
 
@@ -64,7 +64,7 @@ public class AddFrame extends JFrame {
         JTextField modelField = createField(true);
         PlateInputPanel plateInputPanel = new PlateInputPanel();
         JTextField colorField = createField(true);
-        JButton addCarButton = createActionButton("اضافه کردن ماشین", ACTION_GREEN);
+        JButton addCarButton = createActionButton("ذخیره ماشین", ACTION_GREEN);
 
         addFormRow(carFormPanel, "نام ماشین:", modelField);
         addFormRow(carFormPanel, "پلاک ماشین:", plateInputPanel);
@@ -93,7 +93,6 @@ public class AddFrame extends JFrame {
 
         JPanel employeeFormPanel = createTitledPanel("اضافه کردن کارمند");
 
-        // device_user_id is auto-generated at submit time — not shown on the form
         nameField = createField(false);
         nameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
         nameField.setHorizontalAlignment(JTextField.LEFT);
@@ -133,8 +132,9 @@ public class AddFrame extends JFrame {
         String phone = phoneField.getText().strip();
         int fingerIndex = fingerCombo.getSelectedIndex();
 
-        if (name.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "نام کامل را وارد کنید!");
+        String nameError = InputValidators.validateEnglishFullName(name);
+        if (nameError != null) {
+            JOptionPane.showMessageDialog(this, nameError);
             return;
         }
 
