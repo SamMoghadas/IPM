@@ -26,7 +26,7 @@ import java.util.logging.Logger;
 public class ReportFrame extends JFrame {
 
     private static final String[] COLUMNS = {
-            "شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"
+            "شناسه کارمند", "نام کارمند", "ماشین", "رنگ", "پلاک", "تاریخ تحویل", "تاریخ برگشت", "مقصد"
     };
 
     private static final Logger logger = Logger.getLogger(ReportFrame.class.getName());
