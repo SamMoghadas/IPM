@@ -20,9 +20,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
-/**
- * Rental report with SQL-backed filters and Excel export.
- */
 public class ReportFrame extends JFrame {
 
     private static final String[] COLUMNS = {
@@ -45,7 +42,7 @@ public class ReportFrame extends JFrame {
 
     public ReportFrame() {
         setTitle("گزارش سفرهای ماشین");
-        setSize(1100, 560);
+        setSize(1120, 580);
         setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -83,7 +80,7 @@ public class ReportFrame extends JFrame {
     private JPanel createTopBar() {
         JPanel outer = new JPanel(new BorderLayout(8, 8));
         outer.setBackground(Color.WHITE);
-        outer.setBorder(BorderFactory.createEmptyBorder(8, 10, 4, 10));
+        outer.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 12));
         outer.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         JButton backButton = new JButton("برگشت به صفحه اصلی");
@@ -95,16 +92,17 @@ public class ReportFrame extends JFrame {
         });
         outer.add(backButton, BorderLayout.WEST);
 
+        // Two content rows + actions row for clearer spacing on smaller screens
         JPanel filters = new JPanel(new GridBagLayout());
         filters.setBackground(Color.WHITE);
         filters.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 6, 3, 6);
+        gbc.insets = new Insets(6, 8, 6, 8);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         employeeNameField = new JTextField(10);
-        employeeNameField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        employeeNameField.setHorizontalAlignment(JTextField.RIGHT);
+        employeeNameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+        employeeNameField.setHorizontalAlignment(JTextField.LEFT);
 
         plateSearchPanel = new PlateInputPanel();
 
@@ -147,7 +145,8 @@ public class ReportFrame extends JFrame {
         col = addFilter(filters, gbc, col, row, "تا تاریخ:", dateToField);
         col = addFilter(filters, gbc, col, row, "وضعیت:", statusCombo);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        row = 2;
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
         actions.setBackground(Color.WHITE);
         JButton searchButton = new JButton("جستجو");
         searchButton.setBackground(new Color(0, 120, 215));
@@ -169,9 +168,10 @@ public class ReportFrame extends JFrame {
         actions.add(clearButton);
         actions.add(searchButton);
 
-        gbc.gridx = col;
+        gbc.gridx = 0;
         gbc.gridy = row;
-        gbc.gridwidth = 2;
+        gbc.gridwidth = 8;
+        gbc.anchor = GridBagConstraints.EAST;
         filters.add(actions, gbc);
 
         outer.add(filters, BorderLayout.CENTER);

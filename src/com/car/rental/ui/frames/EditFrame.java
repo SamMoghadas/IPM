@@ -17,6 +17,8 @@ public class EditFrame extends JFrame {
         EMPLOYEE
     }
 
+    private static final Color SAVE_GREEN = new Color(34, 139, 34);
+
     private static final String[] FINGER_LABELS = {
             "0 — انگشت کوچک دست چپ",
             "1 — انگشت حلقه دست چپ",
@@ -102,7 +104,7 @@ public class EditFrame extends JFrame {
         carColorField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         saveButton = new JButton("ذخیره تغییرات");
-        saveButton.setBackground(new Color(0, 120, 215));
+        saveButton.setBackground(SAVE_GREEN);
         saveButton.setForeground(Color.WHITE);
 
         cancelButton = new JButton("انصراف");
@@ -138,7 +140,7 @@ public class EditFrame extends JFrame {
         employeeStatusLabel.setForeground(new Color(80, 80, 80));
 
         saveButton = new JButton("ذخیره تغییرات");
-        saveButton.setBackground(new Color(0, 120, 215));
+        saveButton.setBackground(SAVE_GREEN);
         saveButton.setForeground(Color.WHITE);
 
         cancelButton = new JButton("انصراف");
