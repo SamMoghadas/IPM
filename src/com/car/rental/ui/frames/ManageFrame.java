@@ -7,19 +7,31 @@ import com.car.rental.service.CarService;
 import com.car.rental.service.EmployeeService;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionEvent;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.sql.SQLException;
 import java.util.List;
 
 public class ManageFrame extends JFrame {
+
+    private static final String STATUS_FREE = "آزاد";
+    private static final String STATUS_ON_MISSION = "در مأموریت";
+
     private final CarService carService;
     private final EmployeeService employeeService;
     private JTable carTable, employeeTable;
     private DefaultTableModel carModel, employeeModel;
+    private TableRowSorter<DefaultTableModel> carSorter, employeeSorter;
+    private JButton editCarButton, deleteCarButton, editEmpButton, deleteEmpButton;
+    private JTextField carSearchField, empSearchField;
 
     public ManageFrame() {
         carService = ServiceLookup.get(CarService.class);
@@ -31,7 +43,7 @@ public class ManageFrame extends JFrame {
 
     private void initializeUI() {
         setTitle("مدیریت ماشین‌ها و کارمندها");
-        setSize(700, 500);
+        setSize(720, 520);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
         getContentPane().setBackground(Color.WHITE);
@@ -51,6 +63,15 @@ public class ManageFrame extends JFrame {
         JTabbedPane tabbedPane = new JTabbedPane();
         tabbedPane.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
+        tabbedPane.addTab("ماشین‌ها", buildCarPanel());
+        tabbedPane.addTab("کارمندها", buildEmployeePanel());
+
+        add(tabbedPane, BorderLayout.CENTER);
+        updateCarButtons();
+        updateEmpButtons();
+    }
+
+    private JPanel buildCarPanel() {
         String[] carColumns = {"نام", "رنگ", "پلاک", "وضعیت"};
         carModel = new DefaultTableModel(carColumns, 0) {
             @Override
@@ -61,22 +82,50 @@ public class ManageFrame extends JFrame {
         carTable = new JTable(carModel);
         carTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         carTable.setRowHeight(25);
-        carTable.setRowSorter(new TableRowSorter<>(carModel));
+        carTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        carSorter = new TableRowSorter<>(carModel);
+        carTable.setRowSorter(carSorter);
         centerColumns(carTable);
+
+        carTable.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> {
+            if (!e.getValueIsAdjusting()) {
+                updateCarButtons();
+            }
+        });
+        carTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2 && carTable.getSelectedRow() >= 0) {
+                    openCarEditFrame();
+                }
+            }
+        });
 
         JScrollPane carScroll = new JScrollPane(carTable);
         carScroll.getViewport().setBackground(Color.WHITE);
 
+        carSearchField = new JTextField(18);
+        carSearchField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        carSearchField.putClientProperty("JTextField.placeholderText", "جستجو: نام یا پلاک");
+        carSearchField.getDocument().addDocumentListener(simpleListener(this::applyCarFilter));
+
+        JPanel searchRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        searchRow.setBackground(Color.WHITE);
+        searchRow.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        searchRow.add(new JLabel("جستجو:"));
+        searchRow.add(carSearchField);
+
         JPanel carPanel = new JPanel(new BorderLayout(10, 10));
-        carPanel.add(carScroll, BorderLayout.CENTER);
         carPanel.setBackground(Color.WHITE);
+        carPanel.add(searchRow, BorderLayout.NORTH);
+        carPanel.add(carScroll, BorderLayout.CENTER);
 
         JPanel carButtons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
         carButtons.setBackground(Color.WHITE);
-        JButton editCarButton = new JButton("ویرایش");
+        editCarButton = new JButton("ویرایش");
         editCarButton.setBackground(new Color(0, 120, 215));
         editCarButton.setForeground(Color.WHITE);
-        JButton deleteCarButton = new JButton("حذف");
+        deleteCarButton = new JButton("حذف");
         deleteCarButton.setBackground(new Color(165, 42, 42));
         deleteCarButton.setForeground(Color.WHITE);
         carButtons.add(editCarButton);
@@ -85,7 +134,10 @@ public class ManageFrame extends JFrame {
 
         editCarButton.addActionListener(e -> openCarEditFrame());
         deleteCarButton.addActionListener(e -> deleteCar());
+        return carPanel;
+    }
 
+    private JPanel buildEmployeePanel() {
         String[] empColumns = {"شناسه کارمند", "نام", "شماره تماس", "وضعیت"};
         employeeModel = new DefaultTableModel(empColumns, 0) {
             @Override
@@ -96,22 +148,50 @@ public class ManageFrame extends JFrame {
         employeeTable = new JTable(employeeModel);
         employeeTable.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         employeeTable.setRowHeight(25);
-        employeeTable.setRowSorter(new TableRowSorter<>(employeeModel));
+        employeeTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        employeeSorter = new TableRowSorter<>(employeeModel);
+        employeeTable.setRowSorter(employeeSorter);
         centerColumns(employeeTable);
+
+        employeeTable.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> {
+            if (!e.getValueIsAdjusting()) {
+                updateEmpButtons();
+            }
+        });
+        employeeTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2 && employeeTable.getSelectedRow() >= 0) {
+                    openEmployeeEditFrame();
+                }
+            }
+        });
 
         JScrollPane empScroll = new JScrollPane(employeeTable);
         empScroll.getViewport().setBackground(Color.WHITE);
 
+        empSearchField = new JTextField(18);
+        empSearchField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+        empSearchField.setHorizontalAlignment(JTextField.LEFT);
+        empSearchField.getDocument().addDocumentListener(simpleListener(this::applyEmpFilter));
+
+        JPanel searchRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        searchRow.setBackground(Color.WHITE);
+        searchRow.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        searchRow.add(new JLabel("جستجو:"));
+        searchRow.add(empSearchField);
+
         JPanel empPanel = new JPanel(new BorderLayout(10, 10));
-        empPanel.add(empScroll, BorderLayout.CENTER);
         empPanel.setBackground(Color.WHITE);
+        empPanel.add(searchRow, BorderLayout.NORTH);
+        empPanel.add(empScroll, BorderLayout.CENTER);
 
         JPanel empButtons = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
         empButtons.setBackground(Color.WHITE);
-        JButton editEmpButton = new JButton("ویرایش");
+        editEmpButton = new JButton("ویرایش");
         editEmpButton.setBackground(new Color(0, 120, 215));
         editEmpButton.setForeground(Color.WHITE);
-        JButton deleteEmpButton = new JButton("حذف");
+        deleteEmpButton = new JButton("حذف");
         deleteEmpButton.setBackground(new Color(165, 42, 42));
         deleteEmpButton.setForeground(Color.WHITE);
         empButtons.add(editEmpButton);
@@ -120,11 +200,48 @@ public class ManageFrame extends JFrame {
 
         editEmpButton.addActionListener(e -> openEmployeeEditFrame());
         deleteEmpButton.addActionListener(e -> deleteEmployee());
+        return empPanel;
+    }
 
-        tabbedPane.addTab("ماشین‌ها", carPanel);
-        tabbedPane.addTab("کارمندها", empPanel);
+    private static DocumentListener simpleListener(Runnable action) {
+        return new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { action.run(); }
+            @Override public void removeUpdate(DocumentEvent e) { action.run(); }
+            @Override public void changedUpdate(DocumentEvent e) { action.run(); }
+        };
+    }
 
-        add(tabbedPane, BorderLayout.CENTER);
+    private void applyCarFilter() {
+        String q = carSearchField.getText().trim();
+        if (q.isEmpty()) {
+            carSorter.setRowFilter(null);
+        } else {
+            carSorter.setRowFilter(RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(q)));
+        }
+        updateCarButtons();
+    }
+
+    private void applyEmpFilter() {
+        String q = empSearchField.getText().trim();
+        if (q.isEmpty()) {
+            employeeSorter.setRowFilter(null);
+        } else {
+            // name (col 1) or phone (col 2)
+            employeeSorter.setRowFilter(RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(q), 1, 2));
+        }
+        updateEmpButtons();
+    }
+
+    private void updateCarButtons() {
+        boolean has = carTable.getSelectedRow() >= 0;
+        editCarButton.setEnabled(has);
+        deleteCarButton.setEnabled(has);
+    }
+
+    private void updateEmpButtons() {
+        boolean has = employeeTable.getSelectedRow() >= 0;
+        editEmpButton.setEnabled(has);
+        deleteEmpButton.setEnabled(has);
     }
 
     private void centerColumns(JTable table) {
@@ -140,16 +257,21 @@ public class ManageFrame extends JFrame {
         employeeModel.setRowCount(0);
         try {
             for (Car car : carService.getAllCars()) {
+                String st = car.getStatus() != null ? car.getStatus() : "";
+                // normalize legacy wording without hamza
+                if (st.contains("ماموریت") && !st.contains("مأموریت")) {
+                    st = STATUS_ON_MISSION;
+                }
                 carModel.addRow(new Object[]{
                         car.getModel(),
                         car.getColor(),
                         car.getPlate(),
-                        car.getStatus() != null ? car.getStatus() : ""
+                        st
                 });
             }
             List<Employee> employees = employeeService.getAllEmployees();
             for (Employee emp : employees) {
-                String status = emp.isRenting() ? "در ماموریت" : "آزاد";
+                String status = emp.isRenting() ? STATUS_ON_MISSION : STATUS_FREE;
                 employeeModel.addRow(new Object[]{
                         emp.getDeviceUserId(),
                         emp.getName(),
@@ -160,6 +282,8 @@ public class ManageFrame extends JFrame {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "خطا در بارگذاری داده‌ها: " + e.getMessage());
         }
+        updateCarButtons();
+        updateEmpButtons();
     }
 
     private void openCarEditFrame() {
@@ -173,8 +297,8 @@ public class ManageFrame extends JFrame {
         String color = carModel.getValueAt(modelRow, 1).toString();
         String plate = carModel.getValueAt(modelRow, 2).toString();
         String status = carModel.getValueAt(modelRow, 3).toString();
-        if (status.equals("در ماموریت")) {
-            JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در ماموریت وجود ندارد!");
+        if (STATUS_ON_MISSION.equals(status) || status.contains("ماموریت")) {
+            JOptionPane.showMessageDialog(this, "امکان ویرایش برای ماشین در مأموریت وجود ندارد!");
             return;
         }
         Car car = new Car(model, plate, color);
@@ -198,7 +322,7 @@ public class ManageFrame extends JFrame {
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
         String deviceUserId = employeeModel.getValueAt(modelRow, 0).toString();
         String status = employeeModel.getValueAt(modelRow, 3).toString();
-        if (status.equals("در ماموریت")) {
+        if (STATUS_ON_MISSION.equals(status) || status.contains("ماموریت")) {
             JOptionPane.showMessageDialog(this,
                     "این کارمند در مأموریت است و امکان ویرایش آن وجود ندارد!");
             return;
@@ -230,7 +354,8 @@ public class ManageFrame extends JFrame {
             return;
         }
         int modelRow = carTable.convertRowIndexToModel(viewRow);
-        if (carModel.getValueAt(modelRow, 3).equals("آزاد")) {
+        String status = carModel.getValueAt(modelRow, 3).toString();
+        if (STATUS_FREE.equals(status)) {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این ماشین را حذف کنید؟");
             if (confirmed) {
                 try {
@@ -243,7 +368,7 @@ public class ManageFrame extends JFrame {
                 }
             }
         } else {
-            JOptionPane.showMessageDialog(this, "ماشین در ماموریت را نمیتوانید حذف کنید!");
+            JOptionPane.showMessageDialog(this, "ماشین در مأموریت را نمی‌توانید حذف کنید!");
         }
     }
 
@@ -254,7 +379,8 @@ public class ManageFrame extends JFrame {
             return;
         }
         int modelRow = employeeTable.convertRowIndexToModel(viewRow);
-        if (employeeModel.getValueAt(modelRow, 3).equals("آزاد")) {
+        String status = employeeModel.getValueAt(modelRow, 3).toString();
+        if (STATUS_FREE.equals(status)) {
             boolean confirmed = deleteConfirmDialog("آیا مطمئن هستید که این کارمند را حذف کنید؟");
             if (confirmed) {
                 try {
@@ -267,7 +393,7 @@ public class ManageFrame extends JFrame {
                 }
             }
         } else {
-            JOptionPane.showMessageDialog(this, "کارمند در ماموریت را نمیتوانید حذف کنید!");
+            JOptionPane.showMessageDialog(this, "کارمند در مأموریت را نمی‌توانید حذف کنید!");
         }
     }
 
