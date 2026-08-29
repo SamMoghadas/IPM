@@ -24,7 +24,7 @@ import java.util.List;
 public final class ReportExcelExporter {
 
     private static final String[] HEADERS = {
-            "شناسه کاربر", "نام کارمند", "ماشین", "رنگ", "پلاک",
+            "شناسه کارمند", "نام کارمند", "ماشین", "رنگ", "پلاک",
             "تاریخ تحویل", "تاریخ برگشت", "مقصد"
     };
 

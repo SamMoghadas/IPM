@@ -86,7 +86,7 @@ public class ManageFrame extends JFrame {
         editCarButton.addActionListener(e -> openCarEditFrame());
         deleteCarButton.addActionListener(e -> deleteCar());
 
-        String[] empColumns = {"شناسه کاربر", "نام", "شماره تماس", "وضعیت"};
+        String[] empColumns = {"شناسه کارمند", "نام", "شماره تماس", "وضعیت"};
         employeeModel = new DefaultTableModel(empColumns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
