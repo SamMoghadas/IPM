@@ -20,10 +20,6 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Data access layer (JDBC). Prefer domain services ({@code EmployeeService},
- * {@code CarService}, {@code RentalService}) from UI code.
- */
 @Repository
 public class DatabaseManager {
     private static final Logger logger = Logger.getLogger(DatabaseManager.class.getName());
@@ -37,7 +33,6 @@ public class DatabaseManager {
         this.dataSource = dataSource;
     }
 
-    /** Legacy no-arg constructor used by existing Swing frames. */
     public DatabaseManager() {
         DataSource ds = null;
         if (SpringContext.isActive()) {
@@ -276,7 +271,7 @@ public class DatabaseManager {
                         rs.getString("name"),
                         rs.getString("plate"),
                         rs.getString("color"),
-                        rented ? "در ماموریت" : "آزاد"
+                        rented ? "در مأموریت" : "آزاد"
                 ));
             }
         }
@@ -494,11 +489,6 @@ public class DatabaseManager {
         return getRentalReport(new RentalReportFilter());
     }
 
-    /**
-     * Filtered report. Jalali date strings use lexical compare on {@code yyyy/MM/dd HH:mm:ss}.
-     * Date overlap (who had the car during [from,to]):
-     * {@code pickup <= rangeEnd AND (return IS NULL OR return >= rangeStart)}.
-     */
     public List<RentalRecord> getRentalReport(RentalReportFilter filter) throws SQLException {
         if (filter == null) {
             filter = new RentalReportFilter();
@@ -547,7 +537,6 @@ public class DatabaseManager {
             if (to == null) {
                 to = from;
             }
-            // Inclusive day bounds (Jalali text order matches chronology for yyyy/MM/dd)
             String rangeStart = from + " 00:00:00";
             String rangeEnd = to + " 23:59:59";
             sql.append(" AND r.pickup_date IS NOT NULL");
