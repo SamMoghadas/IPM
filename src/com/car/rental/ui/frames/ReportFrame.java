@@ -42,8 +42,8 @@ public class ReportFrame extends JFrame {
 
     public ReportFrame() {
         setTitle("گزارش سفرهای ماشین");
-        setSize(1120, 580);
-        setLayout(new BorderLayout(10, 10));
+        setSize(1100, 560);
+        setLayout(new BorderLayout(8, 8));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getContentPane().setBackground(Color.WHITE);
@@ -77,11 +77,20 @@ public class ReportFrame extends JFrame {
         setVisible(true);
     }
 
+    /**
+     * Nav row (fixed) separate from compact filter rows (FlowLayout = no field stretch).
+     */
     private JPanel createTopBar() {
-        JPanel outer = new JPanel(new BorderLayout(8, 8));
+        JPanel outer = new JPanel();
+        outer.setLayout(new BoxLayout(outer, BoxLayout.Y_AXIS));
         outer.setBackground(Color.WHITE);
-        outer.setBorder(BorderFactory.createEmptyBorder(8, 12, 6, 12));
-        outer.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        outer.setBorder(BorderFactory.createEmptyBorder(6, 10, 4, 10));
+
+        // 1) Navigation only — never shares height/width with filters
+        JPanel navRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 2));
+        navRow.setBackground(Color.WHITE);
+        navRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        navRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
 
         JButton backButton = new JButton("برگشت به صفحه اصلی");
         backButton.setBackground(new Color(230, 230, 230));
@@ -90,33 +99,8 @@ public class ReportFrame extends JFrame {
             dispose();
             new MainFrame();
         });
-        outer.add(backButton, BorderLayout.WEST);
-
-        // Two content rows + actions row for clearer spacing on smaller screens
-        JPanel filters = new JPanel(new GridBagLayout());
-        filters.setBackground(Color.WHITE);
-        filters.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(6, 8, 6, 8);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        employeeNameField = new JTextField(10);
-        employeeNameField.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
-        employeeNameField.setHorizontalAlignment(JTextField.LEFT);
-
-        plateSearchPanel = new PlateInputPanel();
-
-        carNameField = new JTextField(8);
-        carNameField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        carNameField.setHorizontalAlignment(JTextField.RIGHT);
-
-        destinationField = new JTextField(8);
-        destinationField.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
-        destinationField.setHorizontalAlignment(JTextField.RIGHT);
-
-        dateFromField = jalaliDateField();
-        dateToField = jalaliDateField();
-        statusCombo = new JComboBox<>(new String[]{"همه", "فقط باز (منتظر برگشت)", "فقط بسته‌شده"});
+        navRow.add(backButton);
+        outer.add(navRow);
 
         KeyAdapter enterSearch = new KeyAdapter() {
             @Override
@@ -126,28 +110,54 @@ public class ReportFrame extends JFrame {
                 }
             }
         };
+
+        employeeNameField = fixedTextField(12, false);
         employeeNameField.addKeyListener(enterSearch);
+
+        plateSearchPanel = new PlateInputPanel();
+
+        carNameField = fixedTextField(10, true);
         carNameField.addKeyListener(enterSearch);
+
+        destinationField = fixedTextField(10, true);
         destinationField.addKeyListener(enterSearch);
+
+        dateFromField = jalaliDateField();
         dateFromField.addKeyListener(enterSearch);
+        dateToField = jalaliDateField();
         dateToField.addKeyListener(enterSearch);
 
-        int col = 0;
-        int row = 0;
-        col = addFilter(filters, gbc, col, row, "نام کارمند:", employeeNameField);
-        col = addFilter(filters, gbc, col, row, "پلاک:", plateSearchPanel);
-        col = addFilter(filters, gbc, col, row, "ماشین:", carNameField);
-        col = addFilter(filters, gbc, col, row, "مقصد:", destinationField);
+        statusCombo = new JComboBox<>(new String[]{"همه", "فقط باز (منتظر برگشت)", "فقط بسته‌شده"});
+        statusCombo.setPreferredSize(new Dimension(160, 26));
+        statusCombo.setMaximumSize(new Dimension(160, 26));
 
-        row = 1;
-        col = 0;
-        col = addFilter(filters, gbc, col, row, "از تاریخ:", dateFromField);
-        col = addFilter(filters, gbc, col, row, "تا تاریخ:", dateToField);
-        col = addFilter(filters, gbc, col, row, "وضعیت:", statusCombo);
+        // 2) Filter row A — identity / vehicle
+        JPanel rowA = filterFlowRow();
+        rowA.add(label("نام کارمند:"));
+        rowA.add(employeeNameField);
+        rowA.add(Box.createHorizontalStrut(10));
+        rowA.add(label("پلاک:"));
+        rowA.add(plateSearchPanel);
+        rowA.add(Box.createHorizontalStrut(10));
+        rowA.add(label("ماشین:"));
+        rowA.add(carNameField);
+        rowA.add(Box.createHorizontalStrut(10));
+        rowA.add(label("مقصد:"));
+        rowA.add(destinationField);
+        outer.add(rowA);
 
-        row = 2;
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
-        actions.setBackground(Color.WHITE);
+        // 3) Filter row B — dates, status, actions (compact)
+        JPanel rowB = filterFlowRow();
+        rowB.add(label("از تاریخ:"));
+        rowB.add(dateFromField);
+        rowB.add(Box.createHorizontalStrut(8));
+        rowB.add(label("تا تاریخ:"));
+        rowB.add(dateToField);
+        rowB.add(Box.createHorizontalStrut(8));
+        rowB.add(label("وضعیت:"));
+        rowB.add(statusCombo);
+        rowB.add(Box.createHorizontalStrut(12));
+
         JButton searchButton = new JButton("جستجو");
         searchButton.setBackground(new Color(0, 120, 215));
         searchButton.setForeground(Color.WHITE);
@@ -164,25 +174,55 @@ public class ReportFrame extends JFrame {
         excelButton.setFocusPainted(false);
         excelButton.addActionListener(e -> exportExcel());
 
-        actions.add(excelButton);
-        actions.add(clearButton);
-        actions.add(searchButton);
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 8;
-        gbc.anchor = GridBagConstraints.EAST;
-        filters.add(actions, gbc);
-
-        outer.add(filters, BorderLayout.CENTER);
+        rowB.add(searchButton);
+        rowB.add(clearButton);
+        rowB.add(excelButton);
+        outer.add(rowB);
 
         JLabel tip = new JLabel(
                 "تاریخ شمسی yyyy/MM/dd — برای یک روز خاص همان تاریخ را در «از» و «تا» بگذارید.");
         tip.setFont(new Font("Arial", Font.PLAIN, 11));
         tip.setForeground(new Color(90, 90, 90));
-        outer.add(tip, BorderLayout.SOUTH);
+        tip.setAlignmentX(Component.RIGHT_ALIGNMENT);
+        tip.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        JPanel tipRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        tipRow.setBackground(Color.WHITE);
+        tipRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        tipRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+        tipRow.add(tip);
+        outer.add(tipRow);
 
         return outer;
+    }
+
+    private static JPanel filterFlowRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
+        row.setBackground(Color.WHITE);
+        row.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        return row;
+    }
+
+    private static JLabel label(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("Arial", Font.PLAIN, 12));
+        return l;
+    }
+
+    /** Fixed preferred width so FlowLayout does not stretch fields. */
+    private static JTextField fixedTextField(int columns, boolean rtl) {
+        JTextField f = new JTextField(columns);
+        f.setPreferredSize(new Dimension(columns * 9 + 24, 26));
+        f.setMaximumSize(f.getPreferredSize());
+        if (rtl) {
+            f.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+            f.setHorizontalAlignment(JTextField.RIGHT);
+        } else {
+            f.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+            f.setHorizontalAlignment(JTextField.LEFT);
+        }
+        return f;
     }
 
     private JPanel createBottomBar() {
@@ -195,30 +235,20 @@ public class ReportFrame extends JFrame {
         return bottom;
     }
 
-    private static int addFilter(JPanel panel, GridBagConstraints gbc, int col, int row,
-                                 String label, JComponent field) {
-        gbc.gridx = col++;
-        gbc.gridy = row;
-        gbc.gridwidth = 1;
-        gbc.weightx = 0;
-        panel.add(new JLabel(label), gbc);
-        gbc.gridx = col++;
-        gbc.weightx = 0.2;
-        panel.add(field, gbc);
-        return col;
-    }
-
     private static JFormattedTextField jalaliDateField() {
         try {
             MaskFormatter mask = new MaskFormatter("####/##/##");
             mask.setPlaceholderCharacter('_');
             JFormattedTextField f = new JFormattedTextField(mask);
-            f.setColumns(8);
+            f.setColumns(7);
+            f.setPreferredSize(new Dimension(92, 26));
+            f.setMaximumSize(new Dimension(92, 26));
             f.setToolTipText("مثال: 1405/05/25");
             return f;
         } catch (Exception e) {
             JFormattedTextField f = new JFormattedTextField();
-            f.setColumns(8);
+            f.setColumns(7);
+            f.setPreferredSize(new Dimension(92, 26));
             return f;
         }
     }
